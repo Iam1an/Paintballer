@@ -194,6 +194,14 @@ class CombatSystem {
         const ruin = world.getRuin(col, row);
         if (!ruin || !ruin.type || !RUINS[ruin.type]?.shootThrough) { b.life = 0; continue; }
       }
+      // Circular obstacle collision (trees, rocks)
+      const obstacles = world.getCircleObstacles(b.x, b.y, CONFIG.TILE);
+      let hitObstacle = false;
+      for (const obs of obstacles) {
+        const odx = b.x - obs.cx, ody = b.y - obs.cy;
+        if (odx * odx + ody * ody < obs.radius * obs.radius) { hitObstacle = true; break; }
+      }
+      if (hitObstacle) { b.life = 0; continue; }
       const targets = b.team === 'player' ? enemySquad.alive : playerSquad.alive;
       for (const u of targets) {
         const dx = u.x - b.x, dy = u.y - b.y;

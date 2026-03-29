@@ -311,6 +311,10 @@ class AISystem {
       return; // skip all other state logic this frame
     }
 
+    // ── Line of sight to closest enemy (used by multiple states) ──
+    const enemyLOS = closest && closestDist < aggroRange
+      && Pathfinder._lineOfSight(unit.x, unit.y, closest.x, closest.y, world);
+
     // ── Out of ammo — melee rush, follow leader, or scavenge ──
     const totalAmmo = unit.ammo + unit.reserve;
     if (totalAmmo <= 0 && !unit.reloading) {
@@ -318,14 +322,19 @@ class AISystem {
       const anyCrate = this._findAnyCrate(unit, world);
 
       if (closest && closestDist < aggroRange) {
-        // Enemy visible — melee rush or retreat
         unit.aimAt(closest.x, closest.y);
         if (closestDist <= CONFIG.UNIT.MELEE_RANGE * 2) {
+          // In melee range — always fight
           this.combat.tryMelee(unit, [closest]);
           unit.accelerate(closest.x - unit.x, closest.y - unit.y, accel * 1.3);
           ai.status = 'Melee Rush!';
+        } else if (anyCrate && !enemyLOS) {
+          // Enemy nearby but no line of sight — prioritize looting
+          this._dropCover(ai);
+          ai.state = 'scavenging'; ai.status = 'Scavenging';
+          ai.scavTarget = null; ai.scavLootTimer = 0;
         } else if (anyCrate) {
-          // Fall through to scavenging below
+          // Has LOS but crates exist — fall through to scavenging below
         } else {
           // No ammo, no crates — melee charge the enemy
           unit.accelerate(closest.x - unit.x, closest.y - unit.y, accel);
@@ -589,11 +598,19 @@ class AISystem {
           this.combat.tryMelee(unit, [closest]);
         }
 
-        // If 2+ allies are already aggressive, switch to covering fire
-        if (this._countAlliesAggressive(unit) >= 2 && ai.reevalTimer <= 0) {
+        // If 2+ allies are already aggressive, switch to covering fire — but with LOS, stay aggressive
+        if (!enemyLOS && this._countAlliesAggressive(unit) >= 2 && ai.reevalTimer <= 0) {
           ai.state = 'covering_fire'; ai.status = 'Covering';
           ai.coverPoint = null;
           break;
+        }
+
+        // With direct LOS, push instead of seeking cover
+        if (enemyLOS && closestDist > CONFIG.UNIT.MELEE_RANGE * 2 && ai.reevalTimer <= 0) {
+          ai.reevalTimer = CONFIG.AI.REEVAL_INTERVAL * 0.5;
+          if (Math.random() < 0.6) {
+            this._dropCover(ai); ai.state = 'pushing'; ai.status = 'Pushing'; break;
+          }
         }
 
         if (!ai.coverPoint || ai.reevalTimer <= 0) {
@@ -648,6 +665,14 @@ class AISystem {
           ai.coverIdleTimer += dt;
         } else {
           ai.coverIdleTimer = 0;
+        }
+
+        // With direct LOS on enemy, leave cover quickly to push
+        if (enemyLOS && ai.reevalTimer <= 0) {
+          ai.reevalTimer = CONFIG.AI.REEVAL_INTERVAL * 0.4;
+          if (Math.random() < 0.7) {
+            this._dropCover(ai); ai.state = 'pushing'; ai.status = 'Pushing'; break;
+          }
         }
 
         if (ai.reevalTimer <= 0) {

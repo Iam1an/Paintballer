@@ -48,6 +48,11 @@ class World {
       const items = [];
       if (Math.random() < 0.7) items.push({ item: 'ammo', qty: 5 + Math.floor(Math.random() * 15) });
       if (Math.random() < 0.4) items.push({ item: 'medkit', qty: 1 + Math.floor(Math.random() * 2) });
+      if (items.length === 0) {
+        items.push(Math.random() < 0.6
+          ? { item: 'ammo', qty: 5 + Math.floor(Math.random() * 15) }
+          : { item: 'medkit', qty: 1 + Math.floor(Math.random() * 2) });
+      }
       this.loot.set(id, items);
     }
     return id;
