@@ -1,11 +1,12 @@
 class World {
-  constructor() {
+  constructor(rng) {
     const W = CONFIG.MAP_W, H = CONFIG.MAP_H;
+    this._rng = rng || Math.random;
 
     this.biome = Array.from({ length: H }, () => Array(W).fill('forest'));
     this.ground = Array.from({ length: H }, () => Array(W).fill('grass'));
     this.groundVar = Array.from({ length: H }, () =>
-      Array.from({ length: W }, () => Math.floor(Math.random() * 4))
+      Array.from({ length: W }, () => Math.floor(this._rng() * 4))
     );
 
     // Resources (multi-tile)
@@ -46,12 +47,12 @@ class World {
     // Auto-populate loot for crates
     if (def.lootable) {
       const items = [];
-      if (Math.random() < 0.7) items.push({ item: 'ammo', qty: 5 + Math.floor(Math.random() * 15) });
-      if (Math.random() < 0.4) items.push({ item: 'medkit', qty: 1 + Math.floor(Math.random() * 2) });
+      if (this._rng() < 0.7) items.push({ item: 'ammo', qty: 5 + Math.floor(this._rng() * 15) });
+      if (this._rng() < 0.4) items.push({ item: 'medkit', qty: 1 + Math.floor(this._rng() * 2) });
       if (items.length === 0) {
-        items.push(Math.random() < 0.6
-          ? { item: 'ammo', qty: 5 + Math.floor(Math.random() * 15) }
-          : { item: 'medkit', qty: 1 + Math.floor(Math.random() * 2) });
+        items.push(this._rng() < 0.6
+          ? { item: 'ammo', qty: 5 + Math.floor(this._rng() * 15) }
+          : { item: 'medkit', qty: 1 + Math.floor(this._rng() * 2) });
       }
       this.loot.set(id, items);
     }
@@ -149,6 +150,29 @@ class World {
     if (res && CONFIG.RESOURCES[res.type].solid) return true;
     const ruin = this.getRuin(col, row);
     if (ruin && RUINS[ruin.type].solid) return true;
+    // Check if a nearby circular obstacle's collision radius overlaps this tile
+    if (this._circleBlocksTile(col, row)) return true;
+    return false;
+  }
+
+  /** Check if any circular resource's collision radius overlaps the center of this tile */
+  _circleBlocksTile(col, row) {
+    const T = CONFIG.TILE;
+    const px = (col + 0.5) * T, py = (row + 0.5) * T;
+    const roundTypes = { tree: true, dead_tree: true, rock: true };
+    const searchR = 3; // check nearby tiles for large resources
+    for (let dr = -searchR; dr <= searchR; dr++) {
+      for (let dc = -searchR; dc <= searchR; dc++) {
+        const res = this.getResource(col + dc, row + dr);
+        if (!res || !roundTypes[res.type] || !CONFIG.RESOURCES[res.type].solid) continue;
+        const sz = res.size * T;
+        const cx = res.col * T + sz / 2;
+        const cy = res.row * T + sz / 2;
+        const radius = sz * 0.42 + CONFIG.UNIT.RADIUS;
+        const dx = px - cx, dy = py - cy;
+        if (dx * dx + dy * dy < radius * radius) return true;
+      }
+    }
     return false;
   }
 

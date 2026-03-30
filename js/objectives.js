@@ -7,36 +7,48 @@ class ObjectiveManager {
     this.winner = null;          // 'player' | 'enemy' | null
   }
 
-  /** Place 3 objectives: player side, center, enemy side */
-  init(world) {
+  setRng(rng) { this._rng = rng; }
+  _rand() { return this._rng ? this._rng() : Math.random(); }
+
+  /** Place objectives: 1 for skirmish, 3 for battle, 0 for tdm */
+  init(world, gameMode) {
     const T = CONFIG.TILE;
     const W = CONFIG.MAP_W, H = CONFIG.MAP_H;
-    const labels = ['ALPHA', 'BRAVO', 'CHARLIE'];
 
+    if (gameMode === 'tdm') {
+      // Team deathmatch — no objectives, elimination only
+      return;
+    }
+
+    if (gameMode === 'skirmish') {
+      // Single center objective
+      const spot = { c: Math.floor(W / 2), r: Math.floor(H / 2) };
+      this.points.push({
+        x: (spot.c + 0.5) * T, y: (spot.r + 0.5) * T,
+        col: spot.c, row: spot.r, control: 0, label: 'ALPHA',
+      });
+      return;
+    }
+
+    const labels = ['ALPHA', 'BRAVO', 'CHARLIE'];
     // Three zones along the diagonal (bottom-left to top-right)
-    // ALPHA near player spawn (bottom-left), BRAVO center, CHARLIE near enemy (top-right)
     const zones = [
-      { cMin: 10, cMax: Math.floor(W * 0.35), rMin: Math.floor(H * 0.65), rMax: H - 10 },  // player side
+      { cMin: 10, cMax: Math.floor(W * 0.35), rMin: Math.floor(H * 0.65), rMax: H - 10 },
       null, // center — fixed
-      { cMin: Math.floor(W * 0.65), cMax: W - 10, rMin: 10, rMax: Math.floor(H * 0.35) },   // enemy side
+      { cMin: Math.floor(W * 0.65), cMax: W - 10, rMin: 10, rMax: Math.floor(H * 0.35) },
     ];
 
     for (let i = 0; i < 3; i++) {
       let spot;
       if (i === 1) {
-        // BRAVO — absolute center of map
         spot = { c: Math.floor(W / 2), r: Math.floor(H / 2) };
       } else {
         const z = zones[i];
         spot = this._findBestSpot(world, z.cMin, z.cMax, z.rMin, z.rMax);
       }
       this.points.push({
-        x: (spot.c + 0.5) * T,
-        y: (spot.r + 0.5) * T,
-        col: spot.c,
-        row: spot.r,
-        control: 0,
-        label: labels[i],
+        x: (spot.c + 0.5) * T, y: (spot.r + 0.5) * T,
+        col: spot.c, row: spot.r, control: 0, label: labels[i],
       });
     }
   }
@@ -45,8 +57,8 @@ class ObjectiveManager {
   _findBestSpot(world, cMin, cMax, rMin, rMax) {
     let best = null, bestScore = -1;
     for (let att = 0; att < 60; att++) {
-      const c = cMin + Math.floor(Math.random() * (cMax - cMin));
-      const r = rMin + Math.floor(Math.random() * (rMax - rMin));
+      const c = cMin + Math.floor(this._rand() * (cMax - cMin));
+      const r = rMin + Math.floor(this._rand() * (rMax - rMin));
       if (!world.inBounds(c, r) || !world.isFree(c, r)) continue;
       // Prefer urban, accept anything
       let score = 1;
@@ -85,17 +97,18 @@ class ObjectiveManager {
       else if (enemyCount > 0) obj.control = Math.max(-1, obj.control - rate * enemyCount * dt);
     }
 
-    // Check domination — all 3 held by one team
+    // Check domination — all points held by one team
+    const total = this.points.length;
     let playerHeld = 0, enemyHeld = 0;
     for (const obj of this.points) {
       if (obj.control >= 0.99) playerHeld++;
       else if (obj.control <= -0.99) enemyHeld++;
     }
 
-    if (playerHeld === 3) {
+    if (playerHeld === total) {
       if (this.dominatingTeam === 'player') this.dominationTimer += dt;
       else { this.dominatingTeam = 'player'; this.dominationTimer = 0; }
-    } else if (enemyHeld === 3) {
+    } else if (enemyHeld === total) {
       if (this.dominatingTeam === 'enemy') this.dominationTimer += dt;
       else { this.dominatingTeam = 'enemy'; this.dominationTimer = 0; }
     } else {

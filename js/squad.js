@@ -32,6 +32,12 @@ class Unit {
     this.barricadeCooldown = 0;
     this.sprintTimer = 0;
     this.sprintCooldown = 0;
+
+    // Network interpolation
+    this._isRemote = false;
+    this._netTargetX = x;
+    this._netTargetY = y;
+    this._netTargetAim = 0;
   }
 
   get maxSpeed() {
@@ -191,6 +197,46 @@ class Unit {
   }
 
   distTo(other) { return Math.sqrt((this.x - other.x) ** 2 + (this.y - other.y) ** 2); }
+
+  applyNetState(s) {
+    this._netTargetX = s.x;
+    this._netTargetY = s.y;
+    this._netTargetAim = s.aim;
+    this.hp = s.hp;
+    this.dead = s.dead;
+    this.reloading = s.reloading;
+    this.usingMedkit = s.usingMedkit;
+    this.ammo = s.ammo;
+    this.reserve = s.reserve;
+    this.medkits = s.medkits;
+    this.grenades = s.grenades;
+    this.sprintTimer = s.sprintTimer;
+    this.meleeSwing = s.meleeSwing;
+    this.vx = s.vx;
+    this.vy = s.vy;
+  }
+
+  interpolateNet(dt) {
+    if (!this._isRemote) return;
+    const lerpRate = 15; // fast lerp to cover 50ms gap
+    const dx = this._netTargetX - this.x;
+    const dy = this._netTargetY - this.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    // Snap if too far behind
+    if (dist > 200) {
+      this.x = this._netTargetX;
+      this.y = this._netTargetY;
+    } else {
+      const t = Math.min(1, lerpRate * dt);
+      this.x += dx * t;
+      this.y += dy * t;
+    }
+    // Angular lerp for aim
+    let aDiff = this._netTargetAim - this.aimAngle;
+    while (aDiff > Math.PI) aDiff -= Math.PI * 2;
+    while (aDiff < -Math.PI) aDiff += Math.PI * 2;
+    this.aimAngle += aDiff * Math.min(1, lerpRate * dt);
+  }
 }
 
 class Squad {

@@ -54,6 +54,88 @@ canvas { display: block; cursor: crosshair; }
 }
 #fullscreen-btn:hover { background: rgba(255,255,255,0.12); color: #ccc; }
 
+/* ── Lobby screen ── */
+#lobby-overlay {
+  position: fixed; inset: 0;
+  background: rgba(8, 8, 16, 0.97);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 210;
+}
+#lobby-panel {
+  text-align: center;
+  display: flex; flex-direction: column; gap: 16px; align-items: center;
+}
+#lobby-title {
+  color: #ccc; font-size: 24px; font-weight: 700;
+  letter-spacing: 4px; margin-bottom: 10px;
+  font-family: 'Courier New', Courier, monospace;
+}
+#lobby-join-row {
+  display: flex; gap: 8px; align-items: center;
+}
+#lobby-code-input {
+  width: 100px; padding: 10px 12px;
+  background: rgba(255,255,255,0.06);
+  border: 2px solid #444; border-radius: 6px;
+  color: #fff; font-size: 20px; font-weight: 700;
+  text-align: center; letter-spacing: 6px;
+  font-family: 'Courier New', Courier, monospace;
+  text-transform: uppercase;
+}
+#lobby-code-input::placeholder { color: #555; letter-spacing: 2px; font-size: 14px; }
+#lobby-code-input:focus { outline: none; border-color: #8af; }
+#lobby-join-btn {
+  padding: 10px 20px;
+  background: #3a8a3a; color: #fff;
+  border: 1px solid #2a6a2a; border-radius: 6px;
+  font-size: 14px; font-weight: 700; cursor: pointer;
+  letter-spacing: 1px;
+  font-family: 'Courier New', Courier, monospace;
+  transition: background 0.15s;
+}
+#lobby-join-btn:hover { background: #4a9a4a; }
+#lobby-status {
+  color: #8af; font-size: 14px; min-height: 40px;
+  font-family: 'Courier New', Courier, monospace;
+  line-height: 1.6;
+}
+.lobby-code {
+  color: #fff; font-size: 28px; font-weight: 700;
+  letter-spacing: 8px; background: rgba(255,255,255,0.06);
+  padding: 4px 12px; border-radius: 6px;
+}
+#lobby-back-btn {
+  padding: 8px 20px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid #555; border-radius: 5px;
+  color: #888; font-size: 11px; cursor: pointer;
+  font-family: 'Courier New', Courier, monospace;
+  transition: background 0.15s;
+}
+#lobby-back-btn:hover { background: rgba(255,255,255,0.12); color: #ccc; }
+
+/* ── Waiting / Disconnect overlays ── */
+#waiting-overlay, #disconnect-overlay {
+  position: fixed; inset: 0;
+  background: rgba(8, 8, 16, 0.85);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 20px;
+  z-index: 300;
+}
+.waiting-text {
+  color: #8af; font-size: 18px; font-weight: 700;
+  letter-spacing: 2px;
+  font-family: 'Courier New', Courier, monospace;
+}
+#disconnect-back-btn {
+  padding: 12px 30px;
+  background: #3a8a3a; color: #fff;
+  border: 1px solid #2a6a2a; border-radius: 6px;
+  font-size: 14px; font-weight: 700; cursor: pointer;
+  font-family: 'Courier New', Courier, monospace;
+}
+#disconnect-back-btn:hover { background: #4a9a4a; }
+
 /* ── Prep screen ── */
 #prep-overlay {
   position: fixed; inset: 0;

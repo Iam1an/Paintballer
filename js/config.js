@@ -129,6 +129,11 @@ const CONFIG = {
     loot_crate: { hp: 999, solid: true, lootable: true },
   },
 
+  NET: {
+    TICK_RATE: 20,
+    INTERP_BUFFER: 0.05,
+  },
+
   WORLD: {
     SPAWN_CLEAR: 6,
     URBAN_THRESHOLD: 0.62,

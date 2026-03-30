@@ -6,6 +6,7 @@ class CombatSystem {
     this.effects = new EffectSystem();
     this.listenerX = 0;
     this.listenerY = 0;
+    this.networkMode = false;
   }
 
   fireBullet(unit, target) {
@@ -184,7 +185,7 @@ class CombatSystem {
     return false;
   }
 
-  update(dt, playerSquad, enemySquad, world) {
+  update(dt, playerSquad, enemySquad, world, localArmy) {
     // Bullets
     for (const b of this.bullets) {
       b.x += b.dx * dt; b.y += b.dy * dt; b.life -= dt;
@@ -202,10 +203,32 @@ class CombatSystem {
         if (odx * odx + ody * ody < obs.radius * obs.radius) { hitObstacle = true; break; }
       }
       if (hitObstacle) { b.life = 0; continue; }
-      const targets = b.team === 'player' ? enemySquad.alive : playerSquad.alive;
-      for (const u of targets) {
-        const dx = u.x - b.x, dy = u.y - b.y;
-        if (dx * dx + dy * dy < 12 * 12) { u.takeDamage(b.damage); b.life = 0; break; }
+
+      if (this.networkMode && localArmy) {
+        // In network mode: remote bullets damage local units only
+        // Local bullets hitting remote units are visual only (remote HP from network)
+        if (b._remote) {
+          // Remote bullet — can damage local army
+          const targets = localArmy.alive;
+          for (const u of targets) {
+            const dx = u.x - b.x, dy = u.y - b.y;
+            if (dx * dx + dy * dy < 12 * 12) { u.takeDamage(b.damage); b.life = 0; break; }
+          }
+        } else {
+          // Local bullet — visual hit check only (no damage to remote units)
+          const remoteTargets = (b.team === 'player' ? enemySquad : playerSquad).alive;
+          for (const u of remoteTargets) {
+            const dx = u.x - b.x, dy = u.y - b.y;
+            if (dx * dx + dy * dy < 12 * 12) { b.life = 0; break; }
+          }
+        }
+      } else {
+        // Offline: original behavior
+        const targets = b.team === 'player' ? enemySquad.alive : playerSquad.alive;
+        for (const u of targets) {
+          const dx = u.x - b.x, dy = u.y - b.y;
+          if (dx * dx + dy * dy < 12 * 12) { u.takeDamage(b.damage); b.life = 0; break; }
+        }
       }
     }
     this.bullets = this.bullets.filter(b => b.life > 0);
@@ -228,18 +251,35 @@ class CombatSystem {
           const dist = Math.sqrt((g.x - this.listenerX) ** 2 + (g.y - this.listenerY) ** 2);
           Audio.explosion(dist, T * 35);
         }
-        const allUnits = [...playerSquad.units, ...enemySquad.units];
-        for (const u of allUnits) {
-          if (u.dead) continue;
-          const dx = u.x - g.x, dy = u.y - g.y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < blastPx) {
-            const falloff = 1 - (dist / blastPx);
-            u.takeDamage(Math.floor(CONFIG.GRENADE.DAMAGE * falloff));
-            // Blast knockback
-            if (dist > 0.1) {
-              u.vx += (dx / dist) * 120 * falloff;
-              u.vy += (dy / dist) * 120 * falloff;
+
+        if (this.networkMode && localArmy) {
+          // Only damage local army units from grenades
+          for (const u of localArmy.units) {
+            if (u.dead) continue;
+            const dx = u.x - g.x, dy = u.y - g.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < blastPx) {
+              const falloff = 1 - (dist / blastPx);
+              u.takeDamage(Math.floor(CONFIG.GRENADE.DAMAGE * falloff));
+              if (dist > 0.1) {
+                u.vx += (dx / dist) * 120 * falloff;
+                u.vy += (dy / dist) * 120 * falloff;
+              }
+            }
+          }
+        } else {
+          const allUnits = [...playerSquad.units, ...enemySquad.units];
+          for (const u of allUnits) {
+            if (u.dead) continue;
+            const dx = u.x - g.x, dy = u.y - g.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < blastPx) {
+              const falloff = 1 - (dist / blastPx);
+              u.takeDamage(Math.floor(CONFIG.GRENADE.DAMAGE * falloff));
+              if (dist > 0.1) {
+                u.vx += (dx / dist) * 120 * falloff;
+                u.vy += (dy / dist) * 120 * falloff;
+              }
             }
           }
         }
@@ -253,12 +293,20 @@ class CombatSystem {
       if (h.timer <= 0 && !h._healed) {
         h._healed = true;
         this.effects.healBurst(h.x, h.y, h.radius);
-        // Heal burst — all same-team allies in radius
-        const allies = h.team === 'player' ? playerSquad.alive : enemySquad.alive;
-        for (const u of allies) {
-          const dx = u.x - h.x, dy = u.y - h.y;
-          if (dx * dx + dy * dy < h.radius * h.radius) {
-            u.heal(h.healAmount);
+        if (this.networkMode && localArmy) {
+          // Only heal local army from local heal zones
+          if (h.team === localArmy.team) {
+            for (const u of localArmy.alive) {
+              const dx = u.x - h.x, dy = u.y - h.y;
+              if (dx * dx + dy * dy < h.radius * h.radius) u.heal(h.healAmount);
+            }
+          }
+          // Remote heal zones are visual only — remote HP comes from network
+        } else {
+          const allies = h.team === 'player' ? playerSquad.alive : enemySquad.alive;
+          for (const u of allies) {
+            const dx = u.x - h.x, dy = u.y - h.y;
+            if (dx * dx + dy * dy < h.radius * h.radius) u.heal(h.healAmount);
           }
         }
       }

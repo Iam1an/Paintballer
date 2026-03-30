@@ -116,17 +116,11 @@ class Renderer {
           }
           ctx.stroke();
         } else if (ruin.type === 'ruin_door') {
-          // Doorway — lighter concrete floor with worn frame
-          ctx.fillStyle = '#8a8580';
+          // Doorway — blend with concrete floor, no visible frame
+          const v = world.groundVar[r]?.[c] || 0;
+          const palette = CONFIG.COLORS.CONCRETE;
+          ctx.fillStyle = palette[v % palette.length];
           ctx.fillRect(sx, sy, T, T);
-          // Door frame — darker strips on two sides
-          ctx.fillStyle = '#5a5550';
-          ctx.fillRect(sx, sy, 4, T);
-          ctx.fillRect(sx + T - 4, sy, 4, T);
-          // Wear marks
-          ctx.fillStyle = '#9a9590';
-          ctx.fillRect(sx + 6, sy + T * 0.3, T - 12, 2);
-          ctx.fillRect(sx + 8, sy + T * 0.6, T - 16, 2);
         } else if (ruin.type === 'wood_wall' || ruin.type === 'wood_floor') {
           // Wood blocks — plank pattern
           ctx.fillStyle = def.color;
@@ -141,6 +135,16 @@ class Renderer {
           ctx.strokeStyle = def.border; ctx.lineWidth = 1.5;
           this._roundRect(ctx, sx + 1, sy + 1, T - 2, T - 2, 3);
           ctx.stroke();
+        } else if (ruin.type === 'scrap') {
+          // Scattered scrap pieces on ground
+          ctx.fillStyle = def.color;
+          ctx.fillRect(sx + 4, sy + 6, 10, 5);
+          ctx.fillRect(sx + 18, sy + 12, 8, 4);
+          ctx.fillRect(sx + 8, sy + 20, 12, 4);
+          ctx.fillStyle = def.border;
+          ctx.fillRect(sx + 14, sy + 3, 6, 3);
+          ctx.fillRect(sx + 3, sy + 14, 5, 6);
+          ctx.fillRect(sx + 22, sy + 22, 7, 3);
         } else {
           // Standard wall/floor — rounded corners
           ctx.fillStyle = def.color;

@@ -1,6 +1,7 @@
 class UI {
-  constructor(onStart) {
+  constructor(onStart, onOnlineStart) {
     this._onStart = onStart;
+    this._onOnlineStart = onOnlineStart;
     this.phase = 'mode_select';
     this.gameMode = null; // 'skirmish' (6v6) or 'battle' (30v30)
     this._buildModeSelect();
@@ -33,8 +34,14 @@ class UI {
     battleBtn.innerHTML = '<div class="mode-btn-title">BATTLE</div><div class="mode-btn-desc">30 vs 30 — 5 squads per team</div>';
     battleBtn.addEventListener('click', () => this._selectMode('battle'));
 
+    const onlineBtn = document.createElement('button');
+    onlineBtn.className = 'mode-btn';
+    onlineBtn.innerHTML = '<div class="mode-btn-title">ONLINE</div><div class="mode-btn-desc">6 vs 6 — 2 players online</div>';
+    onlineBtn.addEventListener('click', () => this._showLobby());
+
     btnRow.appendChild(skirmishBtn);
     btnRow.appendChild(battleBtn);
+    btnRow.appendChild(onlineBtn);
     panel.appendChild(btnRow);
 
     const fsBtn = document.createElement('button');
@@ -48,6 +55,163 @@ class UI {
 
     this.modeOverlay.appendChild(panel);
     document.body.appendChild(this.modeOverlay);
+  }
+
+  // ── Lobby screen ──
+  _showLobby() {
+    this.modeOverlay.classList.add('hidden');
+    this.phase = 'lobby';
+
+    if (this.lobbyOverlay) this.lobbyOverlay.remove();
+    this.lobbyOverlay = document.createElement('div');
+    this.lobbyOverlay.id = 'lobby-overlay';
+
+    const panel = document.createElement('div');
+    panel.id = 'lobby-panel';
+
+    const title = document.createElement('div');
+    title.id = 'lobby-title';
+    title.textContent = 'ONLINE BATTLE';
+    panel.appendChild(title);
+
+    // Create room
+    const createBtn = document.createElement('button');
+    createBtn.className = 'mode-btn';
+    createBtn.innerHTML = '<div class="mode-btn-title">CREATE GAME</div><div class="mode-btn-desc">Host a room and share the code</div>';
+    createBtn.addEventListener('click', () => this._createRoom());
+    panel.appendChild(createBtn);
+
+    // Join room
+    const joinRow = document.createElement('div');
+    joinRow.id = 'lobby-join-row';
+    this._joinInput = document.createElement('input');
+    this._joinInput.id = 'lobby-code-input';
+    this._joinInput.type = 'text';
+    this._joinInput.maxLength = 4;
+    this._joinInput.placeholder = 'CODE';
+    this._joinInput.style.textTransform = 'uppercase';
+    const joinBtn = document.createElement('button');
+    joinBtn.id = 'lobby-join-btn';
+    joinBtn.textContent = 'JOIN GAME';
+    joinBtn.addEventListener('click', () => {
+      const code = this._joinInput.value.trim();
+      if (code.length === 4) this._joinRoom(code);
+    });
+    joinRow.appendChild(this._joinInput);
+    joinRow.appendChild(joinBtn);
+    panel.appendChild(joinRow);
+
+    // Status area
+    this._lobbyStatus = document.createElement('div');
+    this._lobbyStatus.id = 'lobby-status';
+    panel.appendChild(this._lobbyStatus);
+
+    // Back button
+    const backBtn = document.createElement('button');
+    backBtn.id = 'lobby-back-btn';
+    backBtn.textContent = 'BACK';
+    backBtn.addEventListener('click', () => {
+      Net.disconnect();
+      this.lobbyOverlay.remove();
+      this.modeOverlay.classList.remove('hidden');
+      this.phase = 'mode_select';
+    });
+    panel.appendChild(backBtn);
+
+    this.lobbyOverlay.appendChild(panel);
+    document.body.appendChild(this.lobbyOverlay);
+  }
+
+  async _createRoom() {
+    this._lobbyStatus.textContent = 'Connecting...';
+    try {
+      const wsUrl = `ws://${location.host}`;
+      await Net.connect(wsUrl);
+      Net.on('room_created', (msg) => {
+        Net.roomCode = msg.code;
+        this._lobbyStatus.innerHTML = `Room code: <span class="lobby-code">${msg.code}</span><br>Waiting for opponent...`;
+      });
+      Net.on('opponent_joined', () => {
+        this._lobbyStatus.textContent = 'Opponent joined! Setting up...';
+        this._startOnlinePrep();
+      });
+      Net.on('error', (msg) => {
+        this._lobbyStatus.textContent = msg.message || 'Error';
+      });
+      Net.createRoom();
+    } catch {
+      this._lobbyStatus.textContent = 'Failed to connect to server';
+    }
+  }
+
+  async _joinRoom(code) {
+    this._lobbyStatus.textContent = 'Connecting...';
+    try {
+      const wsUrl = `ws://${location.host}`;
+      await Net.connect(wsUrl);
+      Net.on('room_joined', (msg) => {
+        Net.roomCode = msg.code;
+        this._lobbyStatus.textContent = 'Joined! Setting up...';
+        this._startOnlinePrep();
+      });
+      Net.on('error', (msg) => {
+        this._lobbyStatus.textContent = msg.message || 'Room not found';
+      });
+      Net.joinRoom(code);
+    } catch {
+      this._lobbyStatus.textContent = 'Failed to connect to server';
+    }
+  }
+
+  _startOnlinePrep() {
+    this.gameMode = 'online';
+    this.lobbyOverlay.remove();
+
+    const squadsCount = 1; // 6v6 online
+    this.classSelections = [];
+    for (let s = 0; s < squadsCount; s++) {
+      this.classSelections.push([...CONFIG.SQUAD.DEFAULTS]);
+    }
+    this._prepSquadIdx = 0;
+    this._squadsCount = squadsCount;
+    this._buildPrepScreen();
+    this.phase = 'prep';
+  }
+
+  showWaitingOverlay(text) {
+    if (this._waitingOverlay) this._waitingOverlay.remove();
+    this._waitingOverlay = document.createElement('div');
+    this._waitingOverlay.id = 'waiting-overlay';
+    this._waitingOverlay.innerHTML = `<div class="waiting-text">${text}</div>`;
+    document.body.appendChild(this._waitingOverlay);
+  }
+
+  hideWaitingOverlay() {
+    if (this._waitingOverlay) { this._waitingOverlay.remove(); this._waitingOverlay = null; }
+  }
+
+  showDisconnectOverlay(onBack) {
+    if (this._disconnectOverlay) this._disconnectOverlay.remove();
+    this._disconnectOverlay = document.createElement('div');
+    this._disconnectOverlay.id = 'disconnect-overlay';
+    const text = document.createElement('div');
+    text.className = 'waiting-text';
+    text.textContent = 'Opponent disconnected';
+    const btn = document.createElement('button');
+    btn.id = 'disconnect-back-btn';
+    btn.textContent = 'RETURN TO MENU';
+    btn.addEventListener('click', () => {
+      this._disconnectOverlay.remove();
+      this._disconnectOverlay = null;
+      onBack();
+    });
+    this._disconnectOverlay.appendChild(text);
+    this._disconnectOverlay.appendChild(btn);
+    document.body.appendChild(this._disconnectOverlay);
+  }
+
+  hideDisconnectOverlay() {
+    if (this._disconnectOverlay) { this._disconnectOverlay.remove(); this._disconnectOverlay = null; }
   }
 
   _selectMode(mode) {
@@ -106,9 +270,20 @@ class UI {
     startBtn.id = 'prep-start-btn';
     startBtn.textContent = this._squadsCount > 1 ? 'DEPLOY ALL SQUADS' : 'DEPLOY SQUAD';
     startBtn.addEventListener('click', () => {
-      this.phase = 'play';
-      this.prepOverlay.classList.add('hidden');
-      if (this._onStart) this._onStart(this.classSelections, this.gameMode);
+      if (this.gameMode === 'online') {
+        Net.sendReady(this.classSelections);
+        this.showWaitingOverlay('Waiting for opponent to deploy...');
+        Net.on('game_start', (msg) => {
+          this.hideWaitingOverlay();
+          this.phase = 'play';
+          this.prepOverlay.classList.add('hidden');
+          if (this._onOnlineStart) this._onOnlineStart(this.classSelections, msg);
+        });
+      } else {
+        this.phase = 'play';
+        this.prepOverlay.classList.add('hidden');
+        if (this._onStart) this._onStart(this.classSelections, this.gameMode);
+      }
     });
     panel.appendChild(startBtn);
 

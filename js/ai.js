@@ -35,6 +35,10 @@ class UnitAI {
     this.scavTarget = null;
     this.scavLootTimer = 0;
 
+    // TDM roaming
+    this.roamTarget = null;
+    this.roamTimer = 0;
+
     // A* pathfinding
     this.path = null;
     this.pathIdx = 0;
@@ -326,7 +330,8 @@ class AISystem {
         if (closestDist <= CONFIG.UNIT.MELEE_RANGE * 2) {
           // In melee range — always fight
           this.combat.tryMelee(unit, [closest]);
-          unit.accelerate(closest.x - unit.x, closest.y - unit.y, accel * 1.3);
+          this._navigateTo(unit, closest.x, closest.y, accel * 1.3, dt, world, ai);
+          unit.aimAt(closest.x, closest.y);
           ai.status = 'Melee Rush!';
         } else if (anyCrate && !enemyLOS) {
           // Enemy nearby but no line of sight — prioritize looting
@@ -337,7 +342,8 @@ class AISystem {
           // Has LOS but crates exist — fall through to scavenging below
         } else {
           // No ammo, no crates — melee charge the enemy
-          unit.accelerate(closest.x - unit.x, closest.y - unit.y, accel);
+          this._navigateTo(unit, closest.x, closest.y, accel, dt, world, ai);
+          unit.aimAt(closest.x, closest.y);
           ai.status = 'Charging!';
         }
         if (!anyCrate) return;
@@ -403,9 +409,10 @@ class AISystem {
         }
         if (ai.coverPoint) {
           const cdx = ai.coverPoint.x - unit.x, cdy = ai.coverPoint.y - unit.y;
-          if (cdx * cdx + cdy * cdy > 144) unit.accelerate(cdx, cdy, accel * 1.2);
+          if (cdx * cdx + cdy * cdy > 144) this._navigateTo(unit, ai.coverPoint.x, ai.coverPoint.y, accel * 1.2, dt, world, ai);
         } else if (closest) {
-          unit.accelerate(unit.x - closest.x, unit.y - closest.y, accel * 1.1);
+          const fleeX = unit.x + (unit.x - closest.x), fleeY = unit.y + (unit.y - closest.y);
+          this._navigateTo(unit, fleeX, fleeY, accel * 1.1, dt, world, ai);
         }
         if (closest && closestDist <= fireRange) {
           unit.aimAt(closest.x, closest.y);
@@ -509,8 +516,8 @@ class AISystem {
           }
           break;
         }
-        // Leaders and leaderless units pick objectives
-        const obj = objectives.getNearestUnheld(unit.x, unit.y, unit.team);
+        // Leaders and leaderless units pick objectives or roam (TDM)
+        const obj = objectives.points.length > 0 ? objectives.getNearestUnheld(unit.x, unit.y, unit.team) : null;
         if (obj) {
           const spread = CONFIG.AI.OBJECTIVE_SPREAD;
           const tx = obj.x + Math.cos(ai.personalAngle) * spread;
@@ -540,6 +547,37 @@ class AISystem {
             unit.aimAngle = ai.lookAngle;
           }
           // Shoot at visible enemies while moving to or holding obj
+          if (closest && closestDist <= fireRange) {
+            unit.aimAt(closest.x, closest.y);
+            if (unit.canFire()) this.combat.fireBullet(unit, closest);
+          }
+        } else {
+          // TDM roaming — pick a point biased toward map center / enemy side
+          ai.roamTimer -= dt;
+          if (!ai.roamTarget || ai.roamTimer <= 0) {
+            const W = CONFIG.MAP_PX_W, H = CONFIG.MAP_PX_H;
+            const bias = unit.team === 'player' ? 0.6 : 0.4; // push toward enemy side
+            const rx = (0.15 + Math.random() * 0.7) * W;
+            const ry = (1 - bias + (Math.random() - 0.5) * 0.6) * H;
+            ai.roamTarget = { x: Math.max(T, Math.min(rx, W - T)), y: Math.max(T, Math.min(ry, H - T)) };
+            ai.roamTimer = 6 + Math.random() * 6; // pick new spot every 6-12s
+          }
+          const dx = ai.roamTarget.x - unit.x, dy = ai.roamTarget.y - unit.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist > T * 3) {
+            ai.status = 'Hunting';
+            const nearbyCrate = (unit.reserve < (unit.classDef?.reserveAmmo || 30)) ? this._findNearbyCrate(unit, world, T) : null;
+            if (nearbyCrate) {
+              ai.scavTarget = nearbyCrate; this._reserveCrate(nearbyCrate.id);
+              ai.scavLootTimer = 0; ai.state = 'looting_opportunity'; ai.status = 'Looting'; break;
+            }
+            this._navigateTo(unit, ai.roamTarget.x, ai.roamTarget.y, accel, dt, world, ai);
+          } else {
+            ai.status = 'Scanning';
+            ai.roamTarget = null; // pick new spot next frame
+            unit.accelerate(Math.cos(ai.idleAngle) * ai.idleDir, Math.sin(ai.idleAngle) * ai.idleDir, accel * 0.08);
+            unit.aimAngle = ai.lookAngle;
+          }
           if (closest && closestDist <= fireRange) {
             unit.aimAt(closest.x, closest.y);
             if (unit.canFire()) this.combat.fireBullet(unit, closest);
@@ -787,10 +825,9 @@ class AISystem {
         // Melee if close
         if (closestDist <= CONFIG.UNIT.MELEE_RANGE) this.combat.tryMelee(unit, [closest]);
 
-        const perp = this._perpToEnemy(unit, closest, ai);
-        const edx = closest.x - unit.x, edy = closest.y - unit.y;
-        const elen = Math.sqrt(edx * edx + edy * edy);
-        if (elen > 1) unit.accelerate(edx / elen + perp.x * 0.5, edy / elen + perp.y * 0.5, accel);
+        // Use pathfinding to reach enemy instead of direct charge
+        this._navigateTo(unit, closest.x, closest.y, accel, dt, world, ai);
+        unit.aimAt(closest.x, closest.y);
         // Only stop pushing if enemy pushes back aggressively
         if (closestDist < CONFIG.UNIT.MELEE_RANGE * 2 || (enemyPushing && closestDist < fireRange * 0.3)) {
           ai.state = 'engaging'; ai.coverPoint = null; ai.status = 'Engaging';
@@ -803,11 +840,14 @@ class AISystem {
         ai.retreatTimer -= dt;
         if (ai.retreatTimer <= 0 || !closest) { ai.state = 'objective'; ai.status = 'Moving to OBJ'; break; }
         unit.aimAt(closest.x, closest.y);
+        // Retreat away from enemy using pathfinding
         const edx = unit.x - closest.x, edy = unit.y - closest.y;
         const elen = Math.sqrt(edx * edx + edy * edy);
         if (elen > 1) {
-          const perp = this._perpToEnemy(unit, closest, ai);
-          unit.accelerate(edx / elen + perp.x * 0.6, edy / elen + perp.y * 0.6, accel);
+          const retreatX = unit.x + (edx / elen) * T * 5;
+          const retreatY = unit.y + (edy / elen) * T * 5;
+          this._navigateTo(unit, retreatX, retreatY, accel, dt, world, ai);
+          unit.aimAt(closest.x, closest.y);
         }
         if (closestDist <= fireRange && unit.canFire()) this.combat.fireBullet(unit, closest);
         break;

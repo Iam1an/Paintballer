@@ -1,12 +1,25 @@
+function mulberry32(seed) {
+  return function() {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    var t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
 const WorldGen = {
   _grids: {},
+  _rng: null,
+
+  setSeed(seed) { this._rng = mulberry32(seed); },
+  _rand() { return this._rng ? this._rng() : Math.random(); },
 
   _makeNoise(key) {
     const s = 16;
     const gw = Math.ceil(CONFIG.MAP_W / s) + 2;
     const gh = Math.ceil(CONFIG.MAP_H / s) + 2;
     this._grids[key] = Array.from({ length: gh }, () =>
-      Array.from({ length: gw }, () => Math.random())
+      Array.from({ length: gw }, () => this._rand())
     );
   },
 
@@ -110,7 +123,7 @@ const WorldGen = {
         if (vertExtent < 1) continue;
 
         // Place bridge — wood floor tiles across the water
-        if (Math.random() < 0.4) { // not every crossing gets a bridge
+        if (this._rand() < 0.4) { // not every crossing gets a bridge
           for (let bc = c; bc < c + width; bc++) {
             if (!world.ruins.has(`${bc},${r}`)) {
               world.placeRuin('wood_floor', bc, r);
@@ -137,7 +150,7 @@ const WorldGen = {
         }
         if (horizExtent < 1) continue;
 
-        if (Math.random() < 0.4) {
+        if (this._rand() < 0.4) {
           for (let br = r; br < r + height; br++) {
             if (!world.ruins.has(`${c},${br}`)) {
               world.placeRuin('wood_floor', c, br);
@@ -160,12 +173,12 @@ const WorldGen = {
     const placed = [];
     for (let i = 0; i < 16; i++) {
       let col, row, att = 0;
-      const w = 5 + Math.floor(Math.random() * 5);
-      const h = 5 + Math.floor(Math.random() * 5);
+      const w = 5 + Math.floor(this._rand() * 5);
+      const h = 5 + Math.floor(this._rand() * 5);
 
       do {
-        col = 3 + Math.floor(Math.random() * (CONFIG.MAP_W - w - 6));
-        row = 3 + Math.floor(Math.random() * (CONFIG.MAP_H - h - 6));
+        col = 3 + Math.floor(this._rand() * (CONFIG.MAP_W - w - 6));
+        row = 3 + Math.floor(this._rand() * (CONFIG.MAP_H - h - 6));
         att++;
       } while (att < 60 && (
         !this._isUrbanRect(world, col, row, w, h) ||
@@ -174,15 +187,15 @@ const WorldGen = {
       ));
       if (att >= 60) continue;
       placed.push({ c: col, r: row, w, h });
-      this._stampRuin(world, col, row, w, h, Math.random() < 0.3);
+      this._stampRuin(world, col, row, w, h, this._rand() < 0.3);
     }
 
     // Cars on roads in urban zones (3x3 each)
     for (let i = 0; i < 10; i++) {
       let att = 0, cc, cr;
       do {
-        cc = Math.floor(Math.random() * (CONFIG.MAP_W - 4));
-        cr = Math.floor(Math.random() * (CONFIG.MAP_H - 4));
+        cc = Math.floor(this._rand() * (CONFIG.MAP_W - 4));
+        cr = Math.floor(this._rand() * (CONFIG.MAP_H - 4));
         att++;
       } while (att < 40 && (
         world.biome[cr]?.[cc] !== 'urban' ||
@@ -195,8 +208,8 @@ const WorldGen = {
 
     // Extra rubble in urban/water (non-solid, decorative)
     for (let i = 0; i < 25; i++) {
-      const c = Math.floor(Math.random() * CONFIG.MAP_W);
-      const r = Math.floor(Math.random() * CONFIG.MAP_H);
+      const c = Math.floor(this._rand() * CONFIG.MAP_W);
+      const r = Math.floor(this._rand() * CONFIG.MAP_H);
       const b = world.biome[r]?.[c];
       if (b === 'urban' && world.isFree(c, r)) {
         if (Math.abs(c - spawnCol) > CONFIG.WORLD.SPAWN_CLEAR || Math.abs(r - spawnRow) > CONFIG.WORLD.SPAWN_CLEAR) {
@@ -218,13 +231,13 @@ const WorldGen = {
   _generateRoads(world, spawnCol, spawnRow) {
     const clear = CONFIG.WORLD.SPAWN_CLEAR;
     for (let i = 0; i < 10; i++) {
-      const horiz = Math.random() > 0.5;
+      const horiz = this._rand() > 0.5;
       const W = CONFIG.MAP_W, H = CONFIG.MAP_H;
 
       if (horiz) {
-        const row = 5 + Math.floor(Math.random() * (H - 10));
-        const start = Math.floor(Math.random() * W);
-        const len = 12 + Math.floor(Math.random() * 25);
+        const row = 5 + Math.floor(this._rand() * (H - 10));
+        const start = Math.floor(this._rand() * W);
+        const len = 12 + Math.floor(this._rand() * 25);
         for (let c = start; c < Math.min(start + len, W); c++) {
           if (world.biome[row]?.[c] !== 'urban') continue;
           if (Math.abs(c - spawnCol) <= clear && Math.abs(row - spawnRow) <= clear) continue;
@@ -232,9 +245,9 @@ const WorldGen = {
           if (world.inBounds(c, row + 1)) world.setGround(c, row + 1, 'road');
         }
       } else {
-        const col = 5 + Math.floor(Math.random() * (W - 10));
-        const start = Math.floor(Math.random() * H);
-        const len = 12 + Math.floor(Math.random() * 25);
+        const col = 5 + Math.floor(this._rand() * (W - 10));
+        const start = Math.floor(this._rand() * H);
+        const len = 12 + Math.floor(this._rand() * 25);
         for (let r = start; r < Math.min(start + len, H); r++) {
           if (world.biome[r]?.[col] !== 'urban') continue;
           if (Math.abs(col - spawnCol) <= clear && Math.abs(r - spawnRow) <= clear) continue;
@@ -261,10 +274,10 @@ const WorldGen = {
         if ((r === midR || r === midR + 1) && (c === col || c === col + w - 1)) {
           world.placeRuin('ruin_door', c, r); continue;
         }
-        if (Math.random() < 0.7) {
+        if (this._rand() < 0.7) {
           // No half walls on corners
           const isCorner = (c === col || c === col + w - 1) && (r === row || r === row + h - 1);
-          const roll = Math.random();
+          const roll = this._rand();
           if (isCorner || roll < 0.4) world.placeRuin('ruin_wall', c, r);
           else if (roll < 0.7) world.placeRuin('ruin_wall_damaged', c, r);
           else {
@@ -284,9 +297,9 @@ const WorldGen = {
     // Interior walls — some solid floors, some half walls for cover
     for (let c = col + 1; c < col + w - 1; c++)
       for (let r = row + 1; r < row + h - 1; r++) {
-        const roll = Math.random();
+        const roll = this._rand();
         if (roll < 0.15) world.placeRuin('ruin_floor', c, r);
-        else if (roll < 0.22) world.placeRuin('half_wall', c, r, { orient: Math.random() > 0.5 ? 'h' : 'v' });
+        else if (roll < 0.22) world.placeRuin('half_wall', c, r, { orient: this._rand() > 0.5 ? 'h' : 'v' });
       }
 
     if (isShop) {
@@ -296,16 +309,16 @@ const WorldGen = {
     }
 
     // More loot crates
-    const crateCount = 2 + Math.floor(Math.random() * 4);
+    const crateCount = 2 + Math.floor(this._rand() * 4);
     for (let n = 0; n < crateCount; n++) {
-      const lc = col + 1 + Math.floor(Math.random() * (w - 2));
-      const lr = row + 1 + Math.floor(Math.random() * (h - 2));
+      const lc = col + 1 + Math.floor(this._rand() * (w - 2));
+      const lr = row + 1 + Math.floor(this._rand() * (h - 2));
       if (world.isFree(lc, lr)) world.placeResource('loot_crate', lc, lr, 1);
     }
 
     for (let n = 0; n < 4; n++) {
-      const rc = col - 1 + Math.floor(Math.random() * (w + 2));
-      const rr = row - 1 + Math.floor(Math.random() * (h + 2));
+      const rc = col - 1 + Math.floor(this._rand() * (w + 2));
+      const rr = row - 1 + Math.floor(this._rand() * (h + 2));
       if (world.inBounds(rc, rr) && world.isFree(rc, rr)) world.placeResource('rubble', rc, rr, 1);
     }
   },
@@ -324,7 +337,7 @@ const WorldGen = {
       this._placeCluster(world, spawnCol, spawnRow, clear, 'forest', (w, px, py) => {
         const ground = w.getGround(px, py);
         if (ground === 'road' || ground === 'concrete') return;
-        const roll = Math.random();
+        const roll = this._rand();
         const size = roll < 0.4 ? 1 : roll < 0.75 ? 2 : 3;
         w.placeResource('tree', px, py, size);
       });
@@ -340,7 +353,7 @@ const WorldGen = {
     // Desert: sparse rocks
     for (let i = 0; i < 8; i++) {
       this._placeCluster(world, spawnCol, spawnRow, clear, 'desert', (w, px, py) => {
-        const size = Math.random() < 0.5 ? 1 : Math.random() < 0.7 ? 2 : 3;
+        const size = this._rand() < 0.5 ? 1 : this._rand() < 0.7 ? 2 : 3;
         w.placeResource('rock', px, py, size);
       });
     }
@@ -350,15 +363,15 @@ const WorldGen = {
       this._placeCluster(world, spawnCol, spawnRow, clear, 'forest', (w, px, py) => {
         const ground = w.getGround(px, py);
         if (ground === 'road' || ground === 'concrete') return;
-        const size = Math.random() < 0.5 ? 1 : 2;
+        const size = this._rand() < 0.5 ? 1 : 2;
         w.placeResource('rock', px, py, size);
       });
     }
 
     // Scattered bushes (forest + water edges, never road/concrete)
     for (let i = 0; i < 100; i++) {
-      const c = Math.floor(Math.random() * CONFIG.MAP_W);
-      const r = Math.floor(Math.random() * CONFIG.MAP_H);
+      const c = Math.floor(this._rand() * CONFIG.MAP_W);
+      const r = Math.floor(this._rand() * CONFIG.MAP_H);
       if (Math.abs(c - spawnCol) <= clear && Math.abs(r - spawnRow) <= clear) continue;
       const biome = world.biome[r]?.[c];
       const ground = world.getGround(c, r);
@@ -368,8 +381,8 @@ const WorldGen = {
 
     // Scattered dead trees in water/desert
     for (let i = 0; i < 30; i++) {
-      const c = Math.floor(Math.random() * CONFIG.MAP_W);
-      const r = Math.floor(Math.random() * CONFIG.MAP_H);
+      const c = Math.floor(this._rand() * CONFIG.MAP_W);
+      const r = Math.floor(this._rand() * CONFIG.MAP_H);
       if (Math.abs(c - spawnCol) <= clear && Math.abs(r - spawnRow) <= clear) continue;
       const biome = world.biome[r]?.[c];
       const ground = world.getGround(c, r);
@@ -383,8 +396,8 @@ const WorldGen = {
   _placeCluster(world, spawnCol, spawnRow, clear, targetBiome, placeFn) {
     let cx, cy, att = 0;
     do {
-      cx = 3 + Math.floor(Math.random() * (CONFIG.MAP_W - 6));
-      cy = 3 + Math.floor(Math.random() * (CONFIG.MAP_H - 6));
+      cx = 3 + Math.floor(this._rand() * (CONFIG.MAP_W - 6));
+      cy = 3 + Math.floor(this._rand() * (CONFIG.MAP_H - 6));
       att++;
     } while (att < 40 && (
       world.biome[cy]?.[cx] !== targetBiome ||
@@ -392,14 +405,14 @@ const WorldGen = {
     ));
     if (att >= 40) return;
 
-    const count = 3 + Math.floor(Math.random() * 6);
+    const count = 3 + Math.floor(this._rand() * 6);
     let px = cx, py = cy;
     for (let n = 0; n < count; n++) {
       if (world.inBounds(px, py) && world.isFree(px, py) && !world.ruins.has(`${px},${py}`)) {
         placeFn(world, px, py);
       }
-      const step = 1 + Math.floor(Math.random() * 3);
-      const dir = Math.floor(Math.random() * 4);
+      const step = 1 + Math.floor(this._rand() * 3);
+      const dir = Math.floor(this._rand() * 4);
       if (dir === 0) px += step; else if (dir === 1) px -= step;
       else if (dir === 2) py += step; else py -= step;
       px = Math.max(1, Math.min(px, CONFIG.MAP_W - 4));

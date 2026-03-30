@@ -12,10 +12,10 @@ const RUINS = {
     solid: true,
   },
   ruin_floor: {
-    name: 'Cracked Floor',
+    name: 'Cracked Wall',
     color: '#888078',
     border: '#6a6258',
-    solid: false,
+    solid: true,
   },
   half_wall: {
     name: 'Half Wall',
@@ -52,6 +52,12 @@ const RUINS = {
     name: 'Barricade',
     color: '#6a6a72',
     border: '#4a4a52',
+    solid: true,
+  },
+  scrap: {
+    name: 'Scrap Wall',
+    color: '#6e6860',
+    border: '#4e4840',
     solid: true,
   },
 };
