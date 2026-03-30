@@ -7,6 +7,8 @@ class CombatSystem {
     this.listenerX = 0;
     this.listenerY = 0;
     this.networkMode = false;
+    this.pendingMeleeHits = []; // melee hits to send over network
+    this.pendingLootRemovals = []; // crate removals to send over network
   }
 
   fireBullet(unit, target) {
@@ -131,10 +133,11 @@ class CombatSystem {
 
   /** Deploy AOE heal zone at the medic's position */
   deployHealZone(healer) {
-    if (healer.dead || healer.medkits <= 0) return false;
+    if (healer.dead) return false;
     if (!healer.classDef || healer.classDef.ability !== 'heal_aoe') return false;
+    if (healer._healAoeCooldown > 0) return false;
 
-    healer.medkits--;
+    healer._healAoeCooldown = 15; // 15 second cooldown
     const T = CONFIG.TILE;
     this.healZones.push({
       x: healer.x,
@@ -170,7 +173,13 @@ class CombatSystem {
       while (diff > Math.PI) diff -= Math.PI * 2;
       while (diff < -Math.PI) diff += Math.PI * 2;
       if (Math.abs(diff) > 1.0) continue;
-      target.takeDamage(CONFIG.UNIT.MELEE_DAMAGE);
+      if (this.networkMode && target._isRemote) {
+        // Don't damage remote units directly — send flat index over network
+        const flatIdx = target.squadIdx * CONFIG.SQUAD.SQUAD_SIZE + target.unitIdx;
+        this.pendingMeleeHits.push({ idx: flatIdx, damage: CONFIG.UNIT.MELEE_DAMAGE });
+      } else {
+        target.takeDamage(CONFIG.UNIT.MELEE_DAMAGE);
+      }
       const len = Math.sqrt(dx * dx + dy * dy);
       if (len > 0.1) { target.vx += (dx / len) * 80; target.vy += (dy / len) * 80; }
     }
@@ -252,35 +261,35 @@ class CombatSystem {
           Audio.explosion(dist, T * 35);
         }
 
-        if (this.networkMode && localArmy) {
-          // Only damage local army units from grenades
-          for (const u of localArmy.units) {
-            if (u.dead) continue;
-            const dx = u.x - g.x, dy = u.y - g.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < blastPx) {
-              const falloff = 1 - (dist / blastPx);
-              u.takeDamage(Math.floor(CONFIG.GRENADE.DAMAGE * falloff));
-              if (dist > 0.1) {
-                u.vx += (dx / dist) * 120 * falloff;
-                u.vy += (dy / dist) * 120 * falloff;
-              }
+        // No friendly fire — only damage the opposing team
+        const targets = this.networkMode && localArmy
+          ? (g.team === localArmy.team ? [] : localArmy.units)
+          : (g.team === 'player' ? enemySquad.units : playerSquad.units);
+        for (const u of targets) {
+          if (u.dead) continue;
+          const dx = u.x - g.x, dy = u.y - g.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < blastPx) {
+            const falloff = 1 - (dist / blastPx);
+            u.takeDamage(Math.floor(CONFIG.GRENADE.DAMAGE * falloff));
+            if (dist > 0.1) {
+              u.vx += (dx / dist) * 120 * falloff;
+              u.vy += (dy / dist) * 120 * falloff;
             }
           }
-        } else {
-          const allUnits = [...playerSquad.units, ...enemySquad.units];
-          for (const u of allUnits) {
-            if (u.dead) continue;
-            const dx = u.x - g.x, dy = u.y - g.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < blastPx) {
-              const falloff = 1 - (dist / blastPx);
-              u.takeDamage(Math.floor(CONFIG.GRENADE.DAMAGE * falloff));
-              if (dist > 0.1) {
-                u.vx += (dx / dist) * 120 * falloff;
-                u.vy += (dy / dist) * 120 * falloff;
-              }
-            }
+        }
+        // Knockback only (no damage) for friendly units
+        const friendlies = this.networkMode && localArmy
+          ? (g.team === localArmy.team ? localArmy.units : [])
+          : (g.team === 'player' ? playerSquad.units : enemySquad.units);
+        for (const u of friendlies) {
+          if (u.dead) continue;
+          const dx = u.x - g.x, dy = u.y - g.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < blastPx && dist > 0.1) {
+            const falloff = 1 - (dist / blastPx);
+            u.vx += (dx / dist) * 120 * falloff;
+            u.vy += (dy / dist) * 120 * falloff;
           }
         }
       }

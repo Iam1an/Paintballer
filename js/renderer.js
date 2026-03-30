@@ -369,12 +369,28 @@ class Renderer {
 
   // ── Units ──
   drawUnit(unit, isSelected) {
-    if (unit.dead) return;
     const { ctx } = this;
     const cam = this.camera;
     const sx = unit.x - cam.x, sy = unit.y - cam.y;
-    const angle = unit.aimAngle;
     const isPlayer = unit.team === 'player';
+
+    if (unit.dead) {
+      // Dead unit — desaturated body, no hands/gun
+      const deadColor = isPlayer ? '#5a6a80' : '#806a5a';
+      const deadDark = isPlayer ? '#3a4a5a' : '#5a4a3a';
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = deadColor;
+      ctx.beginPath(); ctx.arc(sx, sy, 9, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = deadDark;
+      ctx.beginPath(); ctx.arc(sx, sy, 5.5, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#333';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(sx, sy, 9, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = 1;
+      return;
+    }
+
+    const angle = unit.aimAngle;
 
     // Team colors — clean blue vs red
     const bodyColor = isPlayer ? '#3b7ddd' : '#dd3b3b';
@@ -452,6 +468,35 @@ class Renderer {
     ctx.beginPath(); ctx.arc(sx, sy, 10, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = bodyDark;
     ctx.beginPath(); ctx.arc(sx, sy, 6.5, 0, Math.PI * 2); ctx.fill();
+
+    // ── Class indicator ──
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+    ctx.lineWidth = 0.5;
+    const cls2 = unit.className || 'rifleman';
+    if (cls2 === 'rifleman') {
+      // Crosshair dot
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(sx, sy, 3.5, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(sx - 5, sy); ctx.lineTo(sx + 5, sy); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(sx, sy - 5); ctx.lineTo(sx, sy + 5); ctx.stroke();
+    } else if (cls2 === 'machinegunner') {
+      // Three horizontal bars
+      for (let i = -1; i <= 1; i++) {
+        ctx.fillRect(sx - 3, sy + i * 3 - 0.5, 6, 1.5);
+      }
+    } else if (cls2 === 'medic') {
+      // Plus sign
+      ctx.fillRect(sx - 3.5, sy - 1, 7, 2);
+      ctx.fillRect(sx - 1, sy - 3.5, 2, 7);
+    } else if (cls2 === 'grenadier') {
+      // Small diamond
+      ctx.beginPath();
+      ctx.moveTo(sx, sy - 3.5); ctx.lineTo(sx + 3, sy);
+      ctx.lineTo(sx, sy + 3.5); ctx.lineTo(sx - 3, sy);
+      ctx.closePath(); ctx.fill();
+    }
 
     // Outline
     ctx.strokeStyle = outlineColor;

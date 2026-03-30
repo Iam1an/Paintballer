@@ -8,6 +8,7 @@ class Unit {
     this.className = className || 'rifleman';
     this.classDef = CONFIG.CLASSES[this.className];
     this.squadIdx = squadIdx || 0;
+    this.unitIdx = unitIdx || 0;
     this.isLeader = unitIdx === 0;
 
     this.hp = this.classDef ? this.classDef.hp : (team === 'player' ? 100 : CONFIG.ENEMY.HP);
@@ -32,6 +33,7 @@ class Unit {
     this.barricadeCooldown = 0;
     this.sprintTimer = 0;
     this.sprintCooldown = 0;
+    this._healAoeCooldown = 0;
 
     // Network interpolation
     this._isRemote = false;
@@ -62,6 +64,7 @@ class Unit {
     if (this.dead) return;
     if (this.fireCooldown > 0) this.fireCooldown -= dt;
     if (this.meleeCooldown > 0) this.meleeCooldown -= dt;
+    if (this._healAoeCooldown > 0) this._healAoeCooldown -= dt;
     if (this.meleeSwing > 0) this.meleeSwing -= dt;
     if (this.barricadeCooldown > 0) this.barricadeCooldown -= dt;
     if (this.sprintTimer > 0) this.sprintTimer -= dt;

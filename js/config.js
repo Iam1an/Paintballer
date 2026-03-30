@@ -64,9 +64,9 @@ const CONFIG = {
   GRENADE: {
     THROW_RANGE: 7,    // tiles
     THROW_SPEED: 180,  // px/sec
-    FUSE_TIME: 1.5,    // seconds after landing
+    FUSE_TIME: 0.8,    // seconds after landing
     BLAST_RADIUS: 3,   // tiles
-    DAMAGE: 80,
+    DAMAGE: 95,
   },
 
   SQUAD: {

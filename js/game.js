@@ -23,6 +23,8 @@
   let remoteBullets = [], remoteGrenades = [], remoteHealZones = [];
   let remoteBarricadeSet = new Set();
   let disconnected = false;
+  let pendingLootRemovals = [];  // crate positions looted this tick
+  let pendingMeleeHits = [];     // melee damage dealt to remote units this tick
 
   window.addEventListener('resize', () => {
     canvas.width = window.innerWidth;
@@ -68,7 +70,7 @@
     combat.networkMode = isOnline;
     objectives = new ObjectiveManager();
     if (rng) objectives.setRng(rng);
-    if (isOnline) {
+    if (isOnline || effectiveMode === 'skirmish') {
       // TDM — no objectives, elimination only
       objectives.init(world, 'tdm');
     } else {
@@ -132,6 +134,7 @@
       Net.on('state', (msg) => { pendingRemoteState = msg; });
       Net.on('game_over', (msg) => { if (!Net.isHost) objectives.winner = msg.winner; });
       Net.on('opponent_left', () => {
+        if (objectives.winner) return; // game already over, ignore
         disconnected = true;
         ui.showDisconnectOverlay(() => resetToMenu());
       });
@@ -263,7 +266,7 @@
     // ── Game over hold ──
     if (objectives.winner) {
       gameOverTimer += dt;
-      if (networkMode && Net.isHost) Net.sendGameOver(objectives.winner);
+      if (networkMode && Net.isHost && gameOverTimer < 0.1) Net.sendGameOver(objectives.winner);
       renderer.clear();
       renderer.beginFrame();
       renderer.drawGround(world);
@@ -285,6 +288,7 @@
       const foeArmy = (networkMode && !Net.isHost) ? playerArmy : enemyArmy;
       const reason = myArmy.allDead ? 'Team eliminated'
         : foeArmy.allDead ? 'Enemy eliminated'
+        : networkMode ? 'Team eliminated'
         : 'All objectives held for 15 seconds';
       renderer.drawGameOver(winLabel, reason);
 
@@ -348,7 +352,7 @@
           const u = sq.units[i];
           if (u.dead) continue;
           aiSystem.update(dt, u, remoteArmy.units, objectives, world);
-          if (u.classDef?.ability === 'heal_aoe' && u.medkits > 0 && Math.random() < 0.01) {
+          if (u.classDef?.ability === 'heal_aoe' && u._healAoeCooldown <= 0 && Math.random() < 0.005) {
             let hurtNearby = false;
             for (const a of localArmy.alive) { if (a !== u && a.hp < a.maxHp * 0.7 && u.distTo(a) < (u.classDef.healRadius || 3) * T * 1.5) { hurtNearby = true; break; } }
             if (hurtNearby) combat.deployHealZone(u);
@@ -377,8 +381,9 @@
             if (idx < rs.units.length) u.applyNetState(rs.units[idx++]);
           }
         }
-        // Inject remote bullets
+        // Replace remote bullets (not append — avoids duplicates)
         if (rs.bullets) {
+          combat.bullets = combat.bullets.filter(b => !b._remote);
           for (const b of rs.bullets) {
             combat.bullets.push({
               x: b.x, y: b.y, dx: b.dx, dy: b.dy,
@@ -421,6 +426,22 @@
             }
           }
         }
+        // Apply remote melee hits to local units by flat index
+        if (rs.meleeHits) {
+          const localUnits = localArmy.units;
+          for (const hit of rs.meleeHits) {
+            if (hit.idx >= 0 && hit.idx < localUnits.length) {
+              const u = localUnits[hit.idx];
+              if (!u.dead) u.takeDamage(hit.damage);
+            }
+          }
+        }
+        // Remove looted crates
+        if (rs.lootRemovals) {
+          for (const lr of rs.lootRemovals) {
+            world.removeResource(lr.col, lr.row);
+          }
+        }
       }
 
       // Interpolate remote units
@@ -434,6 +455,18 @@
           grenades: Net.serializeGrenades(combat.grenades.filter(g => g.team === localArmy.team)),
           healZones: Net.serializeHealZones(combat.healZones.filter(h => h.team === localArmy.team)),
         };
+        // Include melee hits and loot removals
+        if (combat.pendingMeleeHits.length > 0) {
+          snapshot.meleeHits = combat.pendingMeleeHits;
+          combat.pendingMeleeHits = [];
+        }
+        // Combine player + AI loot removals
+        const allLootRemovals = [...pendingLootRemovals, ...combat.pendingLootRemovals];
+        pendingLootRemovals = [];
+        combat.pendingLootRemovals = [];
+        if (allLootRemovals.length > 0) {
+          snapshot.lootRemovals = allLootRemovals;
+        }
         Net.sendState(snapshot);
       }
     } else {
@@ -444,7 +477,7 @@
           const u = sq.units[i];
           if (u.dead) continue;
           aiSystem.update(dt, u, enemyArmy.units, objectives, world);
-          if (u.classDef?.ability === 'heal_aoe' && u.medkits > 0 && Math.random() < 0.01) {
+          if (u.classDef?.ability === 'heal_aoe' && u._healAoeCooldown <= 0 && Math.random() < 0.005) {
             let hurtNearby = false;
             for (const a of playerArmy.alive) { if (a !== u && a.hp < a.maxHp * 0.7 && u.distTo(a) < (u.classDef.healRadius || 3) * T * 1.5) { hurtNearby = true; break; } }
             if (hurtNearby) combat.deployHealZone(u);
@@ -464,7 +497,7 @@
         for (const u of sq.units) {
           if (u.dead) continue;
           aiSystem.update(dt, u, playerArmy.units, objectives, world);
-          if (u.classDef?.ability === 'heal_aoe' && u.medkits > 0 && Math.random() < 0.01) {
+          if (u.classDef?.ability === 'heal_aoe' && u._healAoeCooldown <= 0 && Math.random() < 0.005) {
             let hurtNearby = false;
             for (const a of enemyArmy.alive) { if (a !== u && a.hp < a.maxHp * 0.7 && u.distTo(a) < (u.classDef.healRadius || 3) * T * 1.5) { hurtNearby = true; break; } }
             if (hurtNearby) combat.deployHealZone(u);
@@ -535,6 +568,7 @@
               if (item === 'medkit') leader.medkits += qty;
             }
             world.removeResource(nearLoot.col, nearLoot.row);
+            if (networkMode) pendingLootRemovals.push({ col: nearLoot.col, row: nearLoot.row });
             lootTarget = null; lootTimer = 0;
           }
         } else { lootTarget = null; lootTimer = 0; }

@@ -315,6 +315,28 @@ class AISystem {
       return; // skip all other state logic this frame
     }
 
+    // ── Seek nearby friendly heal zone when low HP ──
+    if (unit.hp < unit.maxHp * 0.6) {
+      for (const h of this.combat.healZones) {
+        if (h.team !== unit.team || h.timer <= 0) continue;
+        const hdx = h.x - unit.x, hdy = h.y - unit.y;
+        const hdist = Math.sqrt(hdx * hdx + hdy * hdy);
+        if (hdist < h.radius * 2.5) {
+          // Move toward heal zone center and stay inside
+          if (hdist > h.radius * 0.5) {
+            unit.accelerate(hdx, hdy, accel * 0.8);
+          }
+          ai.status = 'Healing (Zone)';
+          // Still shoot at enemies while healing
+          if (closest && closestDist <= fireRange) {
+            unit.aimAt(closest.x, closest.y);
+            if (unit.canFire()) this.combat.fireBullet(unit, closest);
+          }
+          return;
+        }
+      }
+    }
+
     // ── Line of sight to closest enemy (used by multiple states) ──
     const enemyLOS = closest && closestDist < aggroRange
       && Pathfinder._lineOfSight(unit.x, unit.y, closest.x, closest.y, world);
@@ -480,6 +502,7 @@ class AISystem {
                 if (item === 'medkit') unit.medkits += qty;
               }
               this._releaseCrate(ai.scavTarget.id);
+              if (this.combat.networkMode) this.combat.pendingLootRemovals.push({ col: ai.scavTarget.col, row: ai.scavTarget.row });
               world.removeResource(ai.scavTarget.col, ai.scavTarget.row);
               ai.scavTarget = null; ai.scavLootTimer = 0;
               ai._scavAttemptTimer = 0; ai._blacklistedCrate = null;
@@ -611,6 +634,7 @@ class AISystem {
               if (item === 'medkit') unit.medkits += qty;
             }
             this._releaseCrate(ai.scavTarget.id);
+            if (this.combat.networkMode) this.combat.pendingLootRemovals.push({ col: ai.scavTarget.col, row: ai.scavTarget.row });
             world.removeResource(ai.scavTarget.col, ai.scavTarget.row);
             ai.scavTarget = null; ai.scavLootTimer = 0;
             ai.state = 'objective'; ai.status = 'Moving to OBJ';

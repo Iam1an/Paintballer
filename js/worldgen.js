@@ -331,9 +331,10 @@ const WorldGen = {
 
   _generateNature(world, spawnCol, spawnRow) {
     const clear = CONFIG.WORLD.SPAWN_CLEAR;
+    const scale = (CONFIG.MAP_W * CONFIG.MAP_H) / (100 * 100); // scale density by map size
 
     // Forest: dense tree clusters + bushes
-    for (let i = 0; i < 25; i++) {
+    for (let i = 0; i < Math.round(15 * scale); i++) {
       this._placeCluster(world, spawnCol, spawnRow, clear, 'forest', (w, px, py) => {
         const ground = w.getGround(px, py);
         if (ground === 'road' || ground === 'concrete') return;
@@ -344,14 +345,14 @@ const WorldGen = {
     }
 
     // Rocks in desert
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < Math.round(4 * scale); i++) {
       this._placeCluster(world, spawnCol, spawnRow, clear, 'desert', (w, px, py) => {
         w.placeResource('rock', px, py, 1);
       });
     }
 
     // Desert: sparse rocks
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < Math.round(5 * scale); i++) {
       this._placeCluster(world, spawnCol, spawnRow, clear, 'desert', (w, px, py) => {
         const size = this._rand() < 0.5 ? 1 : this._rand() < 0.7 ? 2 : 3;
         w.placeResource('rock', px, py, size);
@@ -359,7 +360,7 @@ const WorldGen = {
     }
 
     // Rock clusters in forests too
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < Math.round(6 * scale); i++) {
       this._placeCluster(world, spawnCol, spawnRow, clear, 'forest', (w, px, py) => {
         const ground = w.getGround(px, py);
         if (ground === 'road' || ground === 'concrete') return;
@@ -369,7 +370,7 @@ const WorldGen = {
     }
 
     // Scattered bushes (forest + water edges, never road/concrete)
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < Math.round(60 * scale); i++) {
       const c = Math.floor(this._rand() * CONFIG.MAP_W);
       const r = Math.floor(this._rand() * CONFIG.MAP_H);
       if (Math.abs(c - spawnCol) <= clear && Math.abs(r - spawnRow) <= clear) continue;
@@ -380,7 +381,7 @@ const WorldGen = {
     }
 
     // Scattered dead trees in water/desert
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < Math.round(18 * scale); i++) {
       const c = Math.floor(this._rand() * CONFIG.MAP_W);
       const r = Math.floor(this._rand() * CONFIG.MAP_H);
       if (Math.abs(c - spawnCol) <= clear && Math.abs(r - spawnRow) <= clear) continue;

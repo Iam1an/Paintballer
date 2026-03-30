@@ -25,12 +25,12 @@ class ObjectiveManager {
       const spot = { c: Math.floor(W / 2), r: Math.floor(H / 2) };
       this.points.push({
         x: (spot.c + 0.5) * T, y: (spot.r + 0.5) * T,
-        col: spot.c, row: spot.r, control: 0, label: 'ALPHA',
+        col: spot.c, row: spot.r, control: 0, label: 'A',
       });
       return;
     }
 
-    const labels = ['ALPHA', 'BRAVO', 'CHARLIE'];
+    const labels = ['A', 'B', 'C'];
     // Three zones along the diagonal (bottom-left to top-right)
     const zones = [
       { cMin: 10, cMax: Math.floor(W * 0.35), rMin: Math.floor(H * 0.65), rMax: H - 10 },
@@ -97,8 +97,14 @@ class ObjectiveManager {
       else if (enemyCount > 0) obj.control = Math.max(-1, obj.control - rate * enemyCount * dt);
     }
 
-    // Check domination — all points held by one team
+    // Check domination — all points held by one team (skip if no objectives)
     const total = this.points.length;
+    if (total === 0) {
+      // TDM — only check elimination
+      if (playerSquad.allDead) this.winner = 'enemy';
+      if (enemySquad.allDead) this.winner = 'player';
+      return;
+    }
     let playerHeld = 0, enemyHeld = 0;
     for (const obj of this.points) {
       if (obj.control >= 0.99) playerHeld++;
