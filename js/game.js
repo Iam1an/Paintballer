@@ -40,7 +40,7 @@
     remoteBarricadeSet = new Set();
 
     const isOnline = networkMode;
-    const effectiveMode = isOnline ? 'skirmish' : gameMode;
+    const effectiveMode = isOnline ? 'skirmish' : (gameMode === 'training' ? 'skirmish' : (gameMode === 'campaign' ? 'battle' : gameMode));
     numSquads = effectiveMode === 'skirmish' ? 1 : SQ.SQUADS_PER_TEAM;
 
     // Set map size based on mode
@@ -170,6 +170,7 @@
     ui.controlsHint.style.display = 'none';
     ui.hideDisconnectOverlay();
     // Show mode select
+    ui._showMainModeSelect?.();
     ui.modeOverlay.classList.remove('hidden');
     ui.phase = 'mode_select';
   }

@@ -140,6 +140,54 @@ class AudioSystem {
     osc.start(now);
     osc.stop(now + 0.5);
   }
+
+  /** Paint splat / UI click sound */
+  splat() {
+    if (!this._enabled || !this.ctx) return;
+
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const duration = 0.15;
+
+    const masterGain = ctx.createGain();
+    masterGain.gain.value = 0.12;
+    masterGain.connect(ctx.destination);
+
+    // Noise splat (the main impact)
+    const noiseBuf = ctx.createBuffer(1, ctx.sampleRate * duration, ctx.sampleRate);
+    const noiseData = noiseBuf.getChannelData(0);
+    for (let i = 0; i < noiseData.length; i++) {
+      const t = i / noiseData.length;
+      noiseData[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, 0.8);
+    }
+    const noiseSource = ctx.createBufferSource();
+    noiseSource.buffer = noiseBuf;
+
+    const noiseFilter = ctx.createBiquadFilter();
+    noiseFilter.type = 'highpass';
+    noiseFilter.frequency.value = 1200 + Math.random() * 800;
+    noiseFilter.Q.value = 3;
+
+    noiseSource.connect(noiseFilter);
+    noiseFilter.connect(masterGain);
+    noiseSource.start(now);
+    noiseSource.stop(now + duration);
+
+    // Short pitch drop for splat character
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(400 + Math.random() * 100, now);
+    osc.frequency.exponentialRampToValueAtTime(180 + Math.random() * 80, now + duration * 0.6);
+
+    const oscGain = ctx.createGain();
+    oscGain.gain.setValueAtTime(0.5, now);
+    oscGain.gain.exponentialRampToValueAtTime(0.01, now + duration * 0.7);
+
+    osc.connect(oscGain);
+    oscGain.connect(masterGain);
+    osc.start(now);
+    osc.stop(now + duration);
+  }
 }
 
 const Audio = new AudioSystem();

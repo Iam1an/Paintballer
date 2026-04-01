@@ -4,57 +4,292 @@ class UI {
     this._onOnlineStart = onOnlineStart;
     this.phase = 'mode_select';
     this.gameMode = null; // 'skirmish' (6v6) or 'battle' (30v30)
+    this._parallaxBgs = new Map(); // Track parallax backgrounds by overlay ID
+    this._mouseMoveListener = (e) => this._handleMouseMove(e);
+    this._buildTopBar();
     this._buildModeSelect();
     this._buildHUD();
   }
 
+  // ── Top bar (shared) ──
+  _buildTopBar() {
+    this.topBar = document.createElement('div');
+    this.topBar.className = 'mode-top-bar';
+
+    this.backBtn = document.createElement('button');
+    this.backBtn.className = 'mode-btn icon-btn hidden';
+    this.backBtn.innerHTML = '⟵';
+    this.backBtn.title = 'Back';
+    this.backBtn.addEventListener('click', () => {
+      if (this.backAction) this.backAction();
+    });
+    this._addSplatSoundToButton(this.backBtn);
+    this.topBar.appendChild(this.backBtn);
+
+    this.fsBtn = document.createElement('button');
+    this.fsBtn.className = 'mode-btn icon-btn';
+    this.fsBtn.innerHTML = '⛶';
+    this.fsBtn.title = 'Fullscreen';
+    this.fsBtn.addEventListener('click', () => {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+      else document.exitFullscreen();
+    });
+    this._addSplatSoundToButton(this.fsBtn);
+    this.topBar.appendChild(this.fsBtn);
+
+    document.body.appendChild(this.topBar);
+  }
+
+  _setBackAction(action) {
+    this.backAction = action;
+    if (action) {
+      this.backBtn.classList.remove('hidden');
+    } else {
+      this.backBtn.classList.add('hidden');
+    }
+  }
+
+  // ── Parallax Background System ──
+  _generatePaintSplat(baseColor, size) {
+    // Convert color name to actual color value
+    const colorMap = {
+      red: '#ff4444',
+      blue: '#4488ff',
+      green: '#44ff44',
+      yellow: '#ffff44',
+      purple: '#ff44ff',
+      cyan: '#44ffff'
+    };
+    const color = colorMap[baseColor] || '#44ff44';
+    
+    // Create splat shape using SVG with organic irregular edges
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 100 100');
+    svg.setAttribute('width', size);
+    svg.setAttribute('height', size);
+    
+    // Main splat blob
+    const mainBlob = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    mainBlob.setAttribute('cx', '50');
+    mainBlob.setAttribute('cy', '50');
+    mainBlob.setAttribute('r', '40');
+    mainBlob.setAttribute('fill', color);
+    mainBlob.setAttribute('opacity', '0.8');
+    svg.appendChild(mainBlob);
+    
+    // Add random splatters and drips
+    for (let i = 0; i < 5 + Math.floor(Math.random() * 5); i++) {
+      const splatter = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      const angle = Math.random() * Math.PI * 2;
+      const distance = 35 + Math.random() * 25;
+      const cx = 50 + Math.cos(angle) * distance;
+      const cy = 50 + Math.sin(angle) * distance;
+      const r = 8 + Math.random() * 12;
+      
+      splatter.setAttribute('cx', cx);
+      splatter.setAttribute('cy', cy);
+      splatter.setAttribute('r', r);
+      splatter.setAttribute('fill', color);
+      splatter.setAttribute('opacity', 0.5 + Math.random() * 0.4);
+      svg.appendChild(splatter);
+    }
+    
+    return svg;
+  }
+
+  _createParallaxBackground(overlayId) {
+    // Create parallax container
+    const parallaxBg = document.createElement('div');
+    parallaxBg.className = 'parallax-bg';
+    parallaxBg.id = `parallax-${overlayId}`;
+
+    // Create three parallax layers
+    const layerFar = document.createElement('div');
+    layerFar.className = 'parallax-layer parallax-layer-far';
+    parallaxBg.appendChild(layerFar);
+
+    const layerMid = document.createElement('div');
+    layerMid.className = 'parallax-layer parallax-layer-mid';
+    parallaxBg.appendChild(layerMid);
+
+    const layerNear = document.createElement('div');
+    layerNear.className = 'parallax-layer parallax-layer-near';
+    parallaxBg.appendChild(layerNear);
+
+    // Generate random paint splats
+    const colors = ['red', 'blue', 'green', 'yellow', 'purple', 'cyan'];
+    const splatCount = 18 + Math.floor(Math.random() * 12);
+
+    for (let i = 0; i < splatCount; i++) {
+      const splat = document.createElement('div');
+      splat.className = 'paint-splat';
+      
+      const color = colors[Math.floor(Math.random() * colors.length)];
+      const size = 30 + Math.random() * 90;
+
+      // Random position - spread across entire screen
+      const x = Math.random() * 100;
+      const y = Math.random() * 100;
+      splat.style.left = x + '%';
+      splat.style.top = y + '%';
+      splat.style.width = size + 'px';
+      splat.style.height = size + 'px';
+      splat.style.transform = `translate(-50%, -50%) rotate(${Math.random() * 360}deg)`;
+
+      // Random opacity (0.4 - 0.85)
+      splat.style.opacity = 0.4 + Math.random() * 0.45;
+
+      // Generate SVG splat and add to div
+      const splatSvg = this._generatePaintSplat(color, size);
+      splat.appendChild(splatSvg);
+
+      // Random layer assignment
+      const layerChoice = Math.random();
+      if (layerChoice < 0.4) {
+        layerFar.appendChild(splat);
+      } else if (layerChoice < 0.7) {
+        layerMid.appendChild(splat);
+      } else {
+        layerNear.appendChild(splat);
+      }
+    }
+
+    // Store parallax info
+    this._parallaxBgs.set(overlayId, {
+      element: parallaxBg,
+      layers: [layerFar, layerMid, layerNear],
+      overlayId: overlayId
+    });
+
+    return parallaxBg;
+  }
+
+  _attachParallaxToOverlay(overlay, overlayId) {
+    const parallaxBg = this._createParallaxBackground(overlayId);
+    overlay.appendChild(parallaxBg);
+
+    // Only add mouse move listener if not already added
+    if (!this._mouseListenerActive) {
+      document.addEventListener('mousemove', this._mouseMoveListener);
+      this._mouseListenerActive = true;
+    }
+  }
+
+  _handleMouseMove(e) {
+    const x = (e.clientX / window.innerWidth) * 2 - 1;
+    const y = (e.clientY / window.innerHeight) * 2 - 1;
+
+    // Apply parallax effect to all visible backgrounds
+    for (const [id, bgInfo] of this._parallaxBgs.entries()) {
+      const overlay = document.getElementById(id);
+      if (overlay && !overlay.classList.contains('hidden')) {
+        const depthMultipliers = [8, 5, 2]; // Different depths for each layer
+        bgInfo.layers.forEach((layer, i) => {
+          const offsetX = x * depthMultipliers[i];
+          const offsetY = y * depthMultipliers[i];
+          layer.style.transform = `translate(${offsetX * 2}px, ${offsetY * 2}px)`;
+        });
+      }
+    }
+  }
+
+  _removeParallaxBackground(overlayId) {
+    if (this._parallaxBgs.has(overlayId)) {
+      const element = this._parallaxBgs.get(overlayId).element;
+      element.remove();
+      this._parallaxBgs.delete(overlayId);
+    }
+
+    // Remove listener if no more backgrounds active
+    if (this._parallaxBgs.size === 0 && this._mouseListenerActive) {
+      document.removeEventListener('mousemove', this._mouseMoveListener);
+      this._mouseListenerActive = false;
+    }
+  }
+
+  _addSplatSoundToButton(button) {
+    button.addEventListener('click', () => {
+      Audio.splat();
+    });
+  }
+
   // ── Mode select screen ──
   _buildModeSelect() {
+
     this.modeOverlay = document.createElement('div');
     this.modeOverlay.id = 'mode-overlay';
 
     const panel = document.createElement('div');
     panel.id = 'mode-panel';
 
+    const appTitle = document.createElement('div');
+    appTitle.id = 'app-title';
+    appTitle.textContent = 'PaintBaller';
+    panel.appendChild(appTitle);
+
     const title = document.createElement('div');
     title.id = 'mode-title';
     title.textContent = 'SELECT MODE';
     panel.appendChild(title);
 
-    const btnRow = document.createElement('div');
-    btnRow.id = 'mode-btn-row';
+    // Main mode selection (Singleplayer / Multiplayer)
+    this.mainModeContainer = document.createElement('div');
+    this.mainModeContainer.className = 'mode-btn-row';
 
-    const skirmishBtn = document.createElement('button');
-    skirmishBtn.className = 'mode-btn';
-    skirmishBtn.innerHTML = '<div class="mode-btn-title">SKIRMISH</div><div class="mode-btn-desc">6 vs 6 — 1 squad per team</div>';
-    skirmishBtn.addEventListener('click', () => this._selectMode('skirmish'));
+    const singleplayerBtn = document.createElement('button');
+    singleplayerBtn.className = 'mode-btn';
+    singleplayerBtn.innerHTML = '<div class="mode-btn-title">SINGLEPLAYER</div><div class="mode-btn-desc">Training & Campaign</div>';
+    singleplayerBtn.addEventListener('click', () => this._showSingleplayerOptions());
+    this._addSplatSoundToButton(singleplayerBtn);
+    this.mainModeContainer.appendChild(singleplayerBtn);
 
-    const battleBtn = document.createElement('button');
-    battleBtn.className = 'mode-btn';
-    battleBtn.innerHTML = '<div class="mode-btn-title">BATTLE</div><div class="mode-btn-desc">30 vs 30 — 5 squads per team</div>';
-    battleBtn.addEventListener('click', () => this._selectMode('battle'));
+    const multiplayerBtn = document.createElement('button');
+    multiplayerBtn.className = 'mode-btn';
+    multiplayerBtn.innerHTML = '<div class="mode-btn-title">MULTIPLAYER</div><div class="mode-btn-desc">Online only</div>';
+    multiplayerBtn.addEventListener('click', () => this._showLobby());
+    this._addSplatSoundToButton(multiplayerBtn);
+    this.mainModeContainer.appendChild(multiplayerBtn);
 
-    const onlineBtn = document.createElement('button');
-    onlineBtn.className = 'mode-btn';
-    onlineBtn.innerHTML = '<div class="mode-btn-title">ONLINE</div><div class="mode-btn-desc">6 vs 6 — 2 players online</div>';
-    onlineBtn.addEventListener('click', () => this._showLobby());
+    panel.appendChild(this.mainModeContainer);
 
-    btnRow.appendChild(skirmishBtn);
-    btnRow.appendChild(battleBtn);
-    btnRow.appendChild(onlineBtn);
-    panel.appendChild(btnRow);
+    // Singleplayer submenu (Training / Campaign)
+    this.spOptionsContainer = document.createElement('div');
+    this.spOptionsContainer.className = 'mode-btn-row hidden';
 
-    const fsBtn = document.createElement('button');
-    fsBtn.id = 'fullscreen-btn';
-    fsBtn.textContent = 'FULLSCREEN (F11)';
-    fsBtn.addEventListener('click', () => {
-      if (!document.fullscreenElement) document.documentElement.requestFullscreen();
-      else document.exitFullscreen();
-    });
-    panel.appendChild(fsBtn);
+    const trainingBtn = document.createElement('button');
+    trainingBtn.className = 'mode-btn';
+    trainingBtn.innerHTML = '<div class="mode-btn-title">TRAINING</div><div class="mode-btn-desc">Learn the basics</div>';
+    trainingBtn.addEventListener('click', () => this._selectMode('training'));
+    this._addSplatSoundToButton(trainingBtn);
+    this.spOptionsContainer.appendChild(trainingBtn);
+
+    const campaignBtn = document.createElement('button');
+    campaignBtn.className = 'mode-btn';
+    campaignBtn.innerHTML = '<div class="mode-btn-title">CAMPAIGN</div><div class="mode-btn-desc">Story missions</div>';
+    campaignBtn.addEventListener('click', () => this._selectMode('campaign'));
+    this._addSplatSoundToButton(campaignBtn);
+    this.spOptionsContainer.appendChild(campaignBtn);
+
+    panel.appendChild(this.spOptionsContainer);
 
     this.modeOverlay.appendChild(panel);
+    
+    // Add parallax background
+    this._attachParallaxToOverlay(this.modeOverlay, 'mode-overlay');
+    
     document.body.appendChild(this.modeOverlay);
+  }
+
+  _showSingleplayerOptions() {
+    this.mainModeContainer.classList.add('hidden');
+    this.spOptionsContainer.classList.remove('hidden');
+    this._setBackAction(() => this._showMainModeSelect());
+  }
+
+  _showMainModeSelect() {
+    this.spOptionsContainer.classList.add('hidden');
+    this.mainModeContainer.classList.remove('hidden');
+    this._setBackAction(null);
   }
 
   // ── Lobby screen ──
@@ -79,6 +314,7 @@ class UI {
     createBtn.className = 'mode-btn';
     createBtn.innerHTML = '<div class="mode-btn-title">CREATE GAME</div><div class="mode-btn-desc">Host a room and share the code</div>';
     createBtn.addEventListener('click', () => this._createRoom());
+    this._addSplatSoundToButton(createBtn);
     panel.appendChild(createBtn);
 
     // Browse lobbies
@@ -86,6 +322,7 @@ class UI {
     browseBtn.className = 'mode-btn';
     browseBtn.innerHTML = '<div class="mode-btn-title">BROWSE LOBBIES</div><div class="mode-btn-desc">Find games waiting for opponents</div>';
     browseBtn.addEventListener('click', () => this._showLobbies());
+    this._addSplatSoundToButton(browseBtn);
     panel.appendChild(browseBtn);
 
     // Join room
@@ -104,6 +341,7 @@ class UI {
       const code = this._joinInput.value.trim();
       if (code.length === 4) this._joinRoom(code);
     });
+    this._addSplatSoundToButton(joinBtn);
     joinRow.appendChild(this._joinInput);
     joinRow.appendChild(joinBtn);
     panel.appendChild(joinRow);
@@ -113,20 +351,24 @@ class UI {
     this._lobbyStatus.id = 'lobby-status';
     panel.appendChild(this._lobbyStatus);
 
-    // Back button
-    const backBtn = document.createElement('button');
-    backBtn.id = 'lobby-back-btn';
-    backBtn.textContent = 'BACK';
-    backBtn.addEventListener('click', () => {
+    this.lobbyOverlay.appendChild(panel);
+    
+    // Add parallax background
+    this._attachParallaxToOverlay(this.lobbyOverlay, 'lobby-overlay');
+    
+    document.body.appendChild(this.lobbyOverlay);
+
+    this._setBackAction(() => {
       Net.disconnect();
-      this.lobbyOverlay.remove();
+      this._removeParallaxBackground('lobby-overlay');
+      if (this.lobbyOverlay) {
+        this.lobbyOverlay.remove();
+        this.lobbyOverlay = null;
+      }
       this.modeOverlay.classList.remove('hidden');
       this.phase = 'mode_select';
+      this._showMainModeSelect();
     });
-    panel.appendChild(backBtn);
-
-    this.lobbyOverlay.appendChild(panel);
-    document.body.appendChild(this.lobbyOverlay);
   }
 
   // ── Lobbies list screen ──
@@ -175,6 +417,7 @@ class UI {
           Net.disconnect(); // Disconnect from the lobby browsing connection
           this._joinRoom(lobby.code);
         });
+        this._addSplatSoundToButton(joinBtn);
         this._lobbiesList.appendChild(lobbyItem);
       }
     }
@@ -188,6 +431,7 @@ class UI {
       this._lobbiesList.remove();
       this._lobbyStatus.textContent = '';
     });
+    this._addSplatSoundToButton(backBtn);
     this._lobbiesList.appendChild(backBtn);
 
     // Insert after the lobby panel
@@ -292,6 +536,7 @@ class UI {
       this._disconnectOverlay = null;
       onBack();
     });
+    this._addSplatSoundToButton(btn);
     this._disconnectOverlay.appendChild(text);
     this._disconnectOverlay.appendChild(btn);
     document.body.appendChild(this._disconnectOverlay);
@@ -302,16 +547,22 @@ class UI {
   }
 
   _selectMode(mode) {
+    // Map singleplayer labels to game modes that are supported in game logic
+    let effectiveMode = mode;
+    if (mode === 'training') effectiveMode = 'skirmish';
+    else if (mode === 'campaign') effectiveMode = 'battle';
+
     this.gameMode = mode;
     this.modeOverlay.classList.add('hidden');
 
-    const squadsCount = mode === 'skirmish' ? 1 : CONFIG.SQUAD.SQUADS_PER_TEAM;
+    const squadsCount = effectiveMode === 'skirmish' ? 1 : CONFIG.SQUAD.SQUADS_PER_TEAM;
     this.classSelections = [];
     for (let s = 0; s < squadsCount; s++) {
       this.classSelections.push([...CONFIG.SQUAD.DEFAULTS]);
     }
     this._prepSquadIdx = 0;
     this._squadsCount = squadsCount;
+    this._effectiveGameMode = effectiveMode;
     this._buildPrepScreen();
     this.phase = 'prep';
   }
@@ -327,7 +578,14 @@ class UI {
 
     const title = document.createElement('div');
     title.id = 'prep-title';
-    title.textContent = this.gameMode === 'skirmish' ? 'SQUAD LOADOUT — 6v6' : 'SQUAD LOADOUT — 30v30';
+    const modeTitleMap = {
+      training: 'TRAINING — 6v6',
+      campaign: 'CAMPAIGN — 30v30',
+      skirmish: 'SKIRMISH — 6v6',
+      battle: 'BATTLE — 30v30',
+      online: 'ONLINE — 6v6'
+    };
+    title.textContent = modeTitleMap[this.gameMode] || modeTitleMap[this._effectiveGameMode] || 'SQUAD LOADOUT';
     panel.appendChild(title);
 
     // Squad tabs (only show for battle mode)
@@ -340,6 +598,7 @@ class UI {
         tab.className = 'prep-tab' + (s === 0 ? ' active' : '');
         tab.textContent = `Squad ${s + 1}`;
         tab.addEventListener('click', () => this._switchPrepSquad(s));
+        this._addSplatSoundToButton(tab);
         tabBar.appendChild(tab);
         this._prepTabs.push(tab);
       }
@@ -363,18 +622,25 @@ class UI {
         Net.on('game_start', (msg) => {
           this.hideWaitingOverlay();
           this.phase = 'play';
+          this._removeParallaxBackground('prep-overlay');
           this.prepOverlay.classList.add('hidden');
           if (this._onOnlineStart) this._onOnlineStart(this.classSelections, msg);
         });
       } else {
         this.phase = 'play';
+        this._removeParallaxBackground('prep-overlay');
         this.prepOverlay.classList.add('hidden');
         if (this._onStart) this._onStart(this.classSelections, this.gameMode);
       }
     });
+    this._addSplatSoundToButton(startBtn);
     panel.appendChild(startBtn);
 
     this.prepOverlay.appendChild(panel);
+    
+    // Add parallax background
+    this._attachParallaxToOverlay(this.prepOverlay, 'prep-overlay');
+    
     document.body.appendChild(this.prepOverlay);
   }
 
@@ -401,6 +667,7 @@ class UI {
           this.classSelections[sq][i] = key;
           this._buildPrepSlots();
         });
+        this._addSplatSoundToButton(btn);
         btnRow.appendChild(btn);
       }
       const desc = document.createElement('div');
