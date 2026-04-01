@@ -2,9 +2,19 @@
 
 A browser-based multiplayer paintball game engine built with JavaScript.
 
+## TO-DO
+
+- Make user login system
+- Leaderboard system
+- UI refinements
+- Probably need some sort of DB to store user info
+- Secure server side stuff
+- Make private games need codes and for public games remove the code so that private games can use them
+- Ads (lol)
+
 ## Project Background
 
-- Initial game created by Ian.
+- Initial game & idea created by Ian.
 - UI refinement, multiplayer lobby system, and hosting setup done by gheat.
 - Hosted at: https://gheat.net/paintballer/
 
@@ -38,4 +48,4 @@ A browser-based multiplayer paintball game engine built with JavaScript.
 
 ## License
 
-Add your preferred license here (MIT, Apache, etc.)
+- MIT
