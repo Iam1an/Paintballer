@@ -81,6 +81,13 @@ class UI {
     createBtn.addEventListener('click', () => this._createRoom());
     panel.appendChild(createBtn);
 
+    // Browse lobbies
+    const browseBtn = document.createElement('button');
+    browseBtn.className = 'mode-btn';
+    browseBtn.innerHTML = '<div class="mode-btn-title">BROWSE LOBBIES</div><div class="mode-btn-desc">Find games waiting for opponents</div>';
+    browseBtn.addEventListener('click', () => this._showLobbies());
+    panel.appendChild(browseBtn);
+
     // Join room
     const joinRow = document.createElement('div');
     joinRow.id = 'lobby-join-row';
@@ -122,6 +129,72 @@ class UI {
     document.body.appendChild(this.lobbyOverlay);
   }
 
+  // ── Lobbies list screen ──
+  async _showLobbies() {
+    this._lobbyStatus.textContent = 'Loading lobbies...';
+    try {
+      const wsUrl = `ws://${location.host}`;
+      await Net.connect(wsUrl);
+      Net.on('lobbies_list', (msg) => {
+        this._displayLobbies(msg.lobbies);
+      });
+      Net.on('error', (msg) => {
+        this._lobbyStatus.textContent = msg.message || 'Error loading lobbies';
+      });
+      Net.getLobbies();
+    } catch {
+      this._lobbyStatus.textContent = 'Failed to connect to server';
+    }
+  }
+
+  _displayLobbies(lobbies) {
+    // Remove existing lobby list if any
+    if (this._lobbiesList) this._lobbiesList.remove();
+
+    this._lobbiesList = document.createElement('div');
+    this._lobbiesList.id = 'lobbies-list';
+
+    if (lobbies.length === 0) {
+      this._lobbiesList.innerHTML = '<div class="no-lobbies">No open lobbies found. Try creating a game!</div>';
+    } else {
+      const title = document.createElement('div');
+      title.className = 'lobbies-title';
+      title.textContent = 'OPEN LOBBIES';
+      this._lobbiesList.appendChild(title);
+
+      for (const lobby of lobbies) {
+        const lobbyItem = document.createElement('div');
+        lobbyItem.className = 'lobby-item';
+        lobbyItem.innerHTML = `
+          <div class="lobby-code">${lobby.code}</div>
+          <div class="lobby-status">${lobby.hostReady ? 'Ready' : 'Setting up'}</div>
+          <button class="lobby-join-btn">JOIN</button>
+        `;
+        const joinBtn = lobbyItem.querySelector('.lobby-join-btn');
+        joinBtn.addEventListener('click', () => {
+          Net.disconnect(); // Disconnect from the lobby browsing connection
+          this._joinRoom(lobby.code);
+        });
+        this._lobbiesList.appendChild(lobbyItem);
+      }
+    }
+
+    // Add back button for lobbies
+    const backBtn = document.createElement('button');
+    backBtn.className = 'lobby-back-btn';
+    backBtn.textContent = 'BACK TO LOBBY';
+    backBtn.addEventListener('click', () => {
+      Net.disconnect();
+      this._lobbiesList.remove();
+      this._lobbyStatus.textContent = '';
+    });
+    this._lobbiesList.appendChild(backBtn);
+
+    // Insert after the lobby panel
+    const panel = document.getElementById('lobby-panel');
+    panel.parentNode.insertBefore(this._lobbiesList, panel.nextSibling);
+  }
+
   async _createRoom() {
     this._lobbyStatus.textContent = 'Connecting...';
     try {
@@ -129,13 +202,16 @@ class UI {
       await Net.connect(wsUrl);
       Net.on('room_created', (msg) => {
         Net.roomCode = msg.code;
-        this._lobbyStatus.innerHTML = `Room code: <span class="lobby-code">${msg.code}</span><br>Waiting for opponent...`;
+        this._lobbyStatus.innerHTML = `Room code: <span class="lobby-code">${msg.code}</span>`;
+        this.showWaitingOverlay('Waiting for opponent...');
       });
       Net.on('opponent_joined', () => {
+        this.hideWaitingOverlay();
         this._lobbyStatus.textContent = 'Opponent joined! Setting up...';
         this._startOnlinePrep();
       });
       Net.on('error', (msg) => {
+        this.hideWaitingOverlay();
         this._lobbyStatus.textContent = msg.message || 'Error';
       });
       Net.createRoom();
@@ -152,20 +228,31 @@ class UI {
       Net.on('room_joined', (msg) => {
         Net.roomCode = msg.code;
         this._lobbyStatus.textContent = 'Joined! Setting up...';
+        this.hideWaitingOverlay();
         this._startOnlinePrep();
       });
       Net.on('error', (msg) => {
+        this.hideWaitingOverlay();
         this._lobbyStatus.textContent = msg.message || 'Room not found';
       });
       Net.joinRoom(code);
     } catch {
+      this.hideWaitingOverlay();
       this._lobbyStatus.textContent = 'Failed to connect to server';
     }
   }
 
   _startOnlinePrep() {
     this.gameMode = 'online';
-    this.lobbyOverlay.remove();
+
+    if (this._lobbiesList) {
+      this._lobbiesList.remove();
+      this._lobbiesList = null;
+    }
+    if (this.lobbyOverlay) {
+      this.lobbyOverlay.remove();
+      this.lobbyOverlay = null;
+    }
 
     const squadsCount = 1; // 6v6 online
     this.classSelections = [];

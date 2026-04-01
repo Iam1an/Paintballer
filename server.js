@@ -63,14 +63,28 @@ wss.on('connection', (ws) => {
       case 'create_room': {
         const code = generateCode();
         rooms.set(code, { host: ws, guest: null, hostReady: false, guestReady: false });
+        console.log('[server] create_room ->', code, 'rooms:', Array.from(rooms.keys()));
         send(ws, { type: 'room_created', code });
 
+        break;
+      }
+
+      case 'get_lobbies': {
+        const lobbies = [];
+        for (const [code, room] of rooms) {
+          if (!room.guest) { // Only show rooms waiting for opponent
+            lobbies.push({ code, hostReady: room.hostReady });
+          }
+        }
+        console.log('[server] get_lobbies ->', lobbies.map(l => l.code));
+        send(ws, { type: 'lobbies_list', lobbies });
         break;
       }
 
       case 'join_room': {
         const code = (msg.code || '').toUpperCase();
         const room = rooms.get(code);
+        console.log('[server] join_room ->', code, 'exists?', !!room, 'guest', room && !!room.guest);
         if (!room || room.guest) {
           send(ws, { type: 'error', message: 'Room not found or full' });
           return;

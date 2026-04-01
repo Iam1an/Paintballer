@@ -54,6 +54,10 @@ const Net = {
     this._send({ type: 'join_room', code: code.toUpperCase() });
   },
 
+  getLobbies() {
+    this._send({ type: 'get_lobbies' });
+  },
+
   sendReady(classSelections) {
     this._send({ type: 'ready', classSelections });
   },
