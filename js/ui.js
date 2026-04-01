@@ -287,8 +287,25 @@ class UI {
   }
 
   _showMainModeSelect() {
+    // If we are in prep, close it and return to the mode overlay
+    if (this.prepOverlay) {
+      this._removeParallaxBackground('prep-overlay');
+      this.prepOverlay.remove();
+      this.prepOverlay = null;
+    }
+
+    if (this.lobbyOverlay) {
+      this.lobbyOverlay.remove();
+      this.lobbyOverlay = null;
+    }
+
+    if (this.modeOverlay) {
+      this.modeOverlay.classList.remove('hidden');
+    }
+
     this.spOptionsContainer.classList.add('hidden');
     this.mainModeContainer.classList.remove('hidden');
+    this.phase = 'mode_select';
     this._setBackAction(null);
   }
 
@@ -448,14 +465,17 @@ class UI {
         Net.roomCode = msg.code;
         this._lobbyStatus.innerHTML = `Room code: <span class="lobby-code">${msg.code}</span>`;
         this.showWaitingOverlay('Waiting for opponent...');
+        this._setBackAction(() => this._cancelOnlineWait());
       });
       Net.on('opponent_joined', () => {
         this.hideWaitingOverlay();
+        this._setBackAction(null);
         this._lobbyStatus.textContent = 'Opponent joined! Setting up...';
         this._startOnlinePrep();
       });
       Net.on('error', (msg) => {
         this.hideWaitingOverlay();
+        this._setBackAction(null);
         this._lobbyStatus.textContent = msg.message || 'Error';
       });
       Net.createRoom();
@@ -473,10 +493,12 @@ class UI {
         Net.roomCode = msg.code;
         this._lobbyStatus.textContent = 'Joined! Setting up...';
         this.hideWaitingOverlay();
+        this._setBackAction(null);
         this._startOnlinePrep();
       });
       Net.on('error', (msg) => {
         this.hideWaitingOverlay();
+        this._setBackAction(null);
         this._lobbyStatus.textContent = msg.message || 'Room not found';
       });
       Net.joinRoom(code);
@@ -507,6 +529,21 @@ class UI {
     this._squadsCount = squadsCount;
     this._buildPrepScreen();
     this.phase = 'prep';
+  }
+
+  _cancelOnlineWait() {
+    this.hideWaitingOverlay();
+    this._setBackAction(null);
+    Net.disconnect();
+    
+    // Return to lobby screen
+    if (this.prepOverlay) {
+      this._removeParallaxBackground('prep-overlay');
+      this.prepOverlay.remove();
+      this.prepOverlay = null;
+    }
+    
+    this._showLobby();
   }
 
   showWaitingOverlay(text) {
@@ -565,6 +602,7 @@ class UI {
     this._effectiveGameMode = effectiveMode;
     this._buildPrepScreen();
     this.phase = 'prep';
+    this._setBackAction(() => this._showMainModeSelect());
   }
 
   // ── Prep screen ──
@@ -619,8 +657,10 @@ class UI {
       if (this.gameMode === 'online') {
         Net.sendReady(this.classSelections);
         this.showWaitingOverlay('Waiting for opponent to deploy...');
+        this._setBackAction(() => this._cancelOnlineWait());
         Net.on('game_start', (msg) => {
           this.hideWaitingOverlay();
+          this._setBackAction(null);
           this.phase = 'play';
           this._removeParallaxBackground('prep-overlay');
           this.prepOverlay.classList.add('hidden');
