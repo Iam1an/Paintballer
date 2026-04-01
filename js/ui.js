@@ -392,7 +392,7 @@ class UI {
   async _showLobbies() {
     this._lobbyStatus.textContent = 'Loading lobbies...';
     try {
-      const wsUrl = `wss://${location.host}/paintballer/`;
+      const wsUrl = `ws://${location.host}/`;
       await Net.connect(wsUrl);
       Net.on('lobbies_list', (msg) => {
         this._displayLobbies(msg.lobbies);
@@ -459,7 +459,7 @@ class UI {
   async _createRoom() {
     this._lobbyStatus.textContent = 'Connecting...';
     try {
-      const wsUrl = `wss://${location.host}/paintballer/`;
+      const wsUrl = `ws://${location.host}/`;
       await Net.connect(wsUrl);
       Net.on('room_created', (msg) => {
         Net.roomCode = msg.code;
@@ -487,7 +487,7 @@ class UI {
   async _joinRoom(code) {
     this._lobbyStatus.textContent = 'Connecting...';
     try {
-      const wsUrl = `wss://${location.host}/paintballer/`;
+      const wsUrl = `ws://${location.host}/`;
       await Net.connect(wsUrl);
       Net.on('room_joined', (msg) => {
         Net.roomCode = msg.code;
