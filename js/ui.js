@@ -304,6 +304,7 @@ class UI {
       const btnRow = document.createElement('div');
       btnRow.className = 'prep-btn-row';
       for (const key of Object.keys(CONFIG.CLASSES)) {
+        if (this.gameMode === 'online' && key === 'brawler') continue; // singleplayer only
         const def = CONFIG.CLASSES[key];
         const btn = document.createElement('button');
         btn.className = 'prep-class-btn' + (this.classSelections[sq][i] === key ? ' active' : '');

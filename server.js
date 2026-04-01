@@ -64,7 +64,7 @@ wss.on('connection', (ws) => {
         const code = generateCode();
         rooms.set(code, { host: ws, guest: null, hostReady: false, guestReady: false });
         send(ws, { type: 'room_created', code });
-        console.log(`Room ${code} created`);
+
         break;
       }
 
@@ -78,7 +78,7 @@ wss.on('connection', (ws) => {
         room.guest = ws;
         send(ws, { type: 'room_joined', code });
         send(room.host, { type: 'opponent_joined' });
-        console.log(`Room ${code}: opponent joined`);
+
         break;
       }
 
@@ -93,7 +93,6 @@ wss.on('connection', (ws) => {
           room.guestReady = true;
           room.guestSelections = msg.classSelections;
         }
-        console.log(`Room ${code}: ${ws === room.host ? 'host' : 'guest'} ready`);
 
         if (room.hostReady && room.guestReady) {
           const seed = Math.floor(Math.random() * 2147483647);
@@ -105,7 +104,7 @@ wss.on('connection', (ws) => {
           };
           send(room.host, startMsg);
           send(room.guest, startMsg);
-          console.log(`Room ${code}: game started (seed ${seed})`);
+
         }
         break;
       }
@@ -135,7 +134,6 @@ wss.on('connection', (ws) => {
     const other = getOther(room, ws);
     send(other, { type: 'opponent_left' });
     rooms.delete(code);
-    console.log(`Room ${code}: closed (player disconnected)`);
   });
 });
 

@@ -341,9 +341,33 @@ class AISystem {
     const enemyLOS = closest && closestDist < aggroRange
       && Pathfinder._lineOfSight(unit.x, unit.y, closest.x, closest.y, world);
 
+    // ── Close-range melee rush instead of reloading ──
+    if (unit.reloading && !unit.classDef?.meleeOnly
+        && closest && closestDist < CONFIG.UNIT.MELEE_RANGE * 4
+        && !ai._meleeRushDecided) {
+      ai._meleeRushDecided = true;
+      if (Math.random() < 0.5) {
+        unit.reloading = false; unit.reloadTimer = 0;
+        ai._meleeRushing = true;
+      }
+    }
+    if (!unit.reloading) ai._meleeRushDecided = false;
+    if (ai._meleeRushing) {
+      if (!closest || closestDist > CONFIG.UNIT.MELEE_RANGE * 5 || unit.ammo > 0) {
+        ai._meleeRushing = false;
+      } else {
+        unit.aimAt(closest.x, closest.y);
+        this._navigateTo(unit, closest.x, closest.y, accel * 1.2, dt, world, ai);
+        unit.aimAt(closest.x, closest.y);
+        if (closestDist <= CONFIG.UNIT.MELEE_RANGE) this.combat.tryMelee(unit, [closest]);
+        ai.status = 'Melee Rush!';
+        return;
+      }
+    }
+
     // ── Out of ammo — melee rush, follow leader, or scavenge ──
     const totalAmmo = unit.ammo + unit.reserve;
-    if (totalAmmo <= 0 && !unit.reloading) {
+    if (totalAmmo <= 0 && !unit.reloading && !unit.classDef?.meleeOnly) {
       // Check if any crates exist to scavenge
       const anyCrate = this._findAnyCrate(unit, world);
 
@@ -380,6 +404,42 @@ class AISystem {
     // ── Priority checks ──
     const enemyInSight = closest && closestDist < aggroRange;
 
+    // ── Brawler AI — always rush and melee ──
+    if (unit.classDef?.meleeOnly) {
+      if (closest && closestDist < aggroRange * 1.5) {
+        unit.aimAt(closest.x, closest.y);
+        // Use recall when low HP
+        if (unit.hp < unit.maxHp * 0.3 && unit._recallCooldown <= 0 && unit._recallHistory.length > 0) {
+          const pos = unit._recallHistory[0];
+          unit.x = pos.x; unit.y = pos.y;
+          unit.vx = 0; unit.vy = 0;
+          unit._recallHistory = [];
+          unit._recallCooldown = unit.classDef.recallCooldown;
+          ai.status = 'Recalled!';
+          return;
+        }
+        const meleeRange = unit.classDef.meleeRange || CONFIG.UNIT.MELEE_RANGE;
+        if (closestDist <= meleeRange) {
+          // Count nearby enemies for AOE decision
+          let nearbyCount = 0;
+          for (const e of enemies) {
+            if (!e.dead && unit.distTo(e) <= meleeRange) nearbyCount++;
+          }
+          const useAoe = nearbyCount >= 2 && unit._aoeCooldown <= 0;
+          if (this.combat.tryMelee(unit, useAoe ? enemies : [closest], useAoe) && useAoe) {
+            unit._aoeCooldown = 5;
+          }
+          ai.status = useAoe ? 'Spin Attack!' : 'Melee!';
+        } else {
+          ai.status = 'Charging!';
+        }
+        this._navigateTo(unit, closest.x, closest.y, accel * 1.2, dt, world, ai);
+        unit.aimAt(closest.x, closest.y);
+        return;
+      }
+      // No enemy — fall through to objective/roam state
+    }
+
     // Low HP — ALWAYS retreat to heal, even in combat
     if (!unit.dead
         && unit.hp < unit.maxHp * CONFIG.UNIT.HEAL_THRESHOLD
@@ -388,9 +448,11 @@ class AISystem {
       this._dropCover(ai);
       ai.state = 'healing'; ai.status = 'Healing';
     }
-    // Low ammo — only scavenge when no enemies visible
-    if (!enemyInSight
-        && (unit.ammo + unit.reserve) <= CONFIG.UNIT.LOW_AMMO
+    // Low ammo — only scavenge when no enemies visible (brawlers: only when low HP and no medkits)
+    const needsScavenge = unit.classDef?.meleeOnly
+      ? (unit.hp < unit.maxHp * 0.5 && unit.medkits <= 0)
+      : (unit.ammo + unit.reserve) <= CONFIG.UNIT.LOW_AMMO;
+    if (!enemyInSight && needsScavenge
         && ai.state !== 'scavenging' && ai.state !== 'grouped' && ai.state !== 'healing') {
       // Only scavenge if crates actually exist
       const hasCrates = this._findAnyCrate(unit, world);
@@ -422,6 +484,7 @@ class AISystem {
 
       case 'healing': {
         ai.status = unit.usingMedkit ? 'Using Medkit' : 'Healing';
+        // Always look for cover when enemy is nearby
         if (!ai.coverPoint || ai.reevalTimer <= 0) {
           if (closest) {
             const spot = this._findUnreservedCover(unit, closest.x, closest.y, world, ai);
@@ -429,20 +492,21 @@ class AISystem {
           }
           ai.reevalTimer = CONFIG.AI.REEVAL_INTERVAL;
         }
+        // Always move to cover — don't stop even while using medkit
         if (ai.coverPoint) {
           const cdx = ai.coverPoint.x - unit.x, cdy = ai.coverPoint.y - unit.y;
-          if (cdx * cdx + cdy * cdy > 144) this._navigateTo(unit, ai.coverPoint.x, ai.coverPoint.y, accel * 1.2, dt, world, ai);
+          if (cdx * cdx + cdy * cdy > 144) this._navigateTo(unit, ai.coverPoint.x, ai.coverPoint.y, accel * 1.3, dt, world, ai);
         } else if (closest) {
           const fleeX = unit.x + (unit.x - closest.x), fleeY = unit.y + (unit.y - closest.y);
-          this._navigateTo(unit, fleeX, fleeY, accel * 1.1, dt, world, ai);
+          this._navigateTo(unit, fleeX, fleeY, accel * 1.2, dt, world, ai);
         }
+        // Shoot back while moving
         if (closest && closestDist <= fireRange) {
           unit.aimAt(closest.x, closest.y);
           if (unit.canFire()) this.combat.fireBullet(unit, closest);
         }
-        const safe = !closest || closestDist > fireRange * 0.5;
-        const atCover = ai.coverPoint && Math.sqrt((ai.coverPoint.x - unit.x) ** 2 + (ai.coverPoint.y - unit.y) ** 2) < 15;
-        if ((safe || atCover) && !unit.usingMedkit && unit.medkits > 0) unit.startMedkit();
+        // Start medkit immediately — keep moving while using it
+        if (!unit.usingMedkit && unit.medkits > 0) unit.startMedkit();
         if (!unit.usingMedkit && unit.hp > unit.maxHp * CONFIG.UNIT.HEAL_THRESHOLD) {
           ai.state = 'objective'; ai.status = 'Moving to OBJ'; ai.coverPoint = null;
         }
@@ -451,8 +515,9 @@ class AISystem {
 
       case 'scavenging': {
         ai.status = 'Scavenging';
-        // Done if ammo restocked or at max
-        if ((unit.ammo + unit.reserve) > CONFIG.UNIT.LOW_AMMO + 10) {
+        // Done if ammo restocked (or brawler got medkits)
+        const scavDone = unit.classDef?.meleeOnly ? unit.medkits > 0 : (unit.ammo + unit.reserve) > CONFIG.UNIT.LOW_AMMO + 10;
+        if (scavDone) {
           if (ai.scavTarget) this._releaseCrate(ai.scavTarget.id);
           ai.state = 'objective'; ai.status = 'Moving to OBJ'; ai.scavTarget = null; break;
         }
@@ -496,15 +561,7 @@ class AISystem {
           } else {
             ai.scavLootTimer += dt; ai.status = 'Looting...';
             if (ai.scavLootTimer >= CONFIG.UNIT.LOOT_TIME) {
-              const items = world.getLoot(ai.scavTarget.col, ai.scavTarget.row);
-              if (items) for (const { item, qty } of items) {
-                if (item === 'ammo') unit.reserve += qty;
-                if (item === 'medkit') unit.medkits += qty;
-              }
-              this._releaseCrate(ai.scavTarget.id);
-              if (this.combat.networkMode) this.combat.pendingLootRemovals.push({ col: ai.scavTarget.col, row: ai.scavTarget.row });
-              world.removeResource(ai.scavTarget.col, ai.scavTarget.row);
-              ai.scavTarget = null; ai.scavLootTimer = 0;
+              this._lootCrate(unit, ai, world);
               ai._scavAttemptTimer = 0; ai._blacklistedCrate = null;
             }
           }
@@ -550,7 +607,7 @@ class AISystem {
 
           if (dist > T * 2) {
             ai.status = 'Moving to OBJ';
-            const nearbyCrate = (unit.reserve < (unit.classDef?.reserveAmmo || 30)) ? this._findNearbyCrate(unit, world, T) : null;
+            const nearbyCrate = this._wantsNearbyCrate(unit, world, T);
             if (nearbyCrate) {
               ai.scavTarget = nearbyCrate; this._reserveCrate(nearbyCrate.id);
               ai.scavLootTimer = 0; ai.state = 'looting_opportunity'; ai.status = 'Looting'; break;
@@ -561,7 +618,7 @@ class AISystem {
             }
           } else {
             ai.status = 'Holding OBJ';
-            const nearbyCrateIdle = (unit.reserve < (unit.classDef?.reserveAmmo || 30)) ? this._findNearbyCrate(unit, world, T) : null;
+            const nearbyCrateIdle = this._wantsNearbyCrate(unit, world, T);
             if (nearbyCrateIdle) {
               ai.scavTarget = nearbyCrateIdle; this._reserveCrate(nearbyCrateIdle.id);
               ai.scavLootTimer = 0; ai.state = 'looting_opportunity'; ai.status = 'Looting'; break;
@@ -589,7 +646,7 @@ class AISystem {
           const dist = Math.sqrt(dx * dx + dy * dy);
           if (dist > T * 3) {
             ai.status = 'Hunting';
-            const nearbyCrate = (unit.reserve < (unit.classDef?.reserveAmmo || 30)) ? this._findNearbyCrate(unit, world, T) : null;
+            const nearbyCrate = this._wantsNearbyCrate(unit, world, T);
             if (nearbyCrate) {
               ai.scavTarget = nearbyCrate; this._reserveCrate(nearbyCrate.id);
               ai.scavLootTimer = 0; ai.state = 'looting_opportunity'; ai.status = 'Looting'; break;
@@ -628,15 +685,7 @@ class AISystem {
         else {
           ai.scavLootTimer += dt;
           if (ai.scavLootTimer >= CONFIG.UNIT.LOOT_TIME) {
-            const items = world.getLoot(ai.scavTarget.col, ai.scavTarget.row);
-            if (items) for (const { item, qty } of items) {
-              if (item === 'ammo') unit.reserve += qty;
-              if (item === 'medkit') unit.medkits += qty;
-            }
-            this._releaseCrate(ai.scavTarget.id);
-            if (this.combat.networkMode) this.combat.pendingLootRemovals.push({ col: ai.scavTarget.col, row: ai.scavTarget.row });
-            world.removeResource(ai.scavTarget.col, ai.scavTarget.row);
-            ai.scavTarget = null; ai.scavLootTimer = 0;
+            this._lootCrate(unit, ai, world);
             ai.state = 'objective'; ai.status = 'Moving to OBJ';
           }
         }
@@ -877,6 +926,27 @@ class AISystem {
         break;
       }
     }
+  }
+
+  /** Apply loot from a crate and remove it */
+  _lootCrate(unit, ai, world) {
+    const items = world.getLoot(ai.scavTarget.col, ai.scavTarget.row);
+    if (items) for (const { item, qty } of items) {
+      if (item === 'ammo' && !unit.classDef?.meleeOnly) unit.reserve += qty;
+      if (item === 'medkit') unit.medkits += qty;
+    }
+    this._releaseCrate(ai.scavTarget.id);
+    if (this.combat.networkMode) this.combat.pendingLootRemovals.push({ col: ai.scavTarget.col, row: ai.scavTarget.row });
+    world.removeResource(ai.scavTarget.col, ai.scavTarget.row);
+    ai.scavTarget = null; ai.scavLootTimer = 0;
+  }
+
+  /** Check if unit needs a nearby crate (ammo for ranged, medkits for brawler) */
+  _wantsNearbyCrate(unit, world, T) {
+    if (unit.classDef?.meleeOnly) {
+      return (unit.medkits <= 0 && unit.hp < unit.maxHp * 0.5) ? this._findNearbyCrate(unit, world, T) : null;
+    }
+    return (unit.reserve < (unit.classDef?.reserveAmmo || 30)) ? this._findNearbyCrate(unit, world, T) : null;
   }
 
   /** Navigate to (tx,ty) using A* pathfinding */

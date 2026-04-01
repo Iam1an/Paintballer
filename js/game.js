@@ -20,7 +20,6 @@
   let networkMode = false;
   let localArmy = null, remoteArmy = null;
   let pendingRemoteState = null;
-  let remoteBullets = [], remoteGrenades = [], remoteHealZones = [];
   let remoteBarricadeSet = new Set();
   let disconnected = false;
   let pendingLootRemovals = [];  // crate positions looted this tick
@@ -238,6 +237,13 @@
           leader.sprintCooldown = leader.classDef.sprintCooldown;
         }
         if (leader.classDef.ability === 'heal_aoe') combat.deployHealZone(leader);
+        if (leader.classDef.ability === 'recall' && leader._recallCooldown <= 0 && leader._recallHistory.length > 0) {
+          const pos = leader._recallHistory[0]; // oldest position = ~2s ago
+          leader.x = pos.x; leader.y = pos.y;
+          leader.vx = 0; leader.vy = 0;
+          leader._recallHistory = [];
+          leader._recallCooldown = leader.classDef.recallCooldown;
+        }
       }
     }
 
@@ -328,8 +334,16 @@
         const isScoping = input.keys.shift && leader.classDef && leader.classDef.scopeLookAhead;
         leader._scoped = isScoping;
         camera.setScope(isScoping, null, leader.classDef?.scopeLookAhead);
-        if (input.mouse.down && leader.canFire()) combat.fireBullet(leader);
-        if (input.keys.v) combat.tryMelee(leader, foeArmy.alive);
+        if (leader.classDef?.meleeOnly) {
+          // Brawler: click for directional melee, V for AOE spin attack
+          if (input.mouse.down) combat.tryMelee(leader, foeArmy.alive, false);
+          if (input.keys.v && leader._aoeCooldown <= 0) {
+            if (combat.tryMelee(leader, foeArmy.alive, true)) leader._aoeCooldown = 5;
+          }
+        } else {
+          if (input.mouse.down && leader.canFire()) combat.fireBullet(leader);
+          if (input.keys.v) combat.tryMelee(leader, foeArmy.alive);
+        }
         leader.update(dt);
       }
       if (leader.dead) selectedUnit = -1;
@@ -564,7 +578,7 @@
           if (lootTimer >= CONFIG.UNIT.LOOT_TIME) {
             const items = world.getLoot(nearLoot.col, nearLoot.row);
             if (items) for (const { item, qty } of items) {
-              if (item === 'ammo') leader.reserve += qty;
+              if (item === 'ammo' && !leader.classDef?.meleeOnly) leader.reserve += qty;
               if (item === 'medkit') leader.medkits += qty;
             }
             world.removeResource(nearLoot.col, nearLoot.row);

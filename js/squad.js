@@ -35,6 +35,11 @@ class Unit {
     this.sprintCooldown = 0;
     this._healAoeCooldown = 0;
 
+    // Brawler abilities
+    this._aoeCooldown = 0;
+    this._recallHistory = []; // position history for last 2s
+    this._recallCooldown = 0;
+
     // Network interpolation
     this._isRemote = false;
     this._netTargetX = x;
@@ -65,6 +70,18 @@ class Unit {
     if (this.fireCooldown > 0) this.fireCooldown -= dt;
     if (this.meleeCooldown > 0) this.meleeCooldown -= dt;
     if (this._healAoeCooldown > 0) this._healAoeCooldown -= dt;
+    if (this._recallCooldown > 0) this._recallCooldown -= dt;
+    if (this._aoeCooldown > 0) this._aoeCooldown -= dt;
+    // Record position history for recall (every ~0.1s, keep 2s worth)
+    if (this.classDef?.ability === 'recall') {
+      if (!this._recallTimer) this._recallTimer = 0;
+      this._recallTimer += dt;
+      if (this._recallTimer >= 0.1) {
+        this._recallTimer = 0;
+        this._recallHistory.push({ x: this.x, y: this.y });
+        if (this._recallHistory.length > 20) this._recallHistory.shift(); // keep 20 entries = 2s
+      }
+    }
     if (this.meleeSwing > 0) this.meleeSwing -= dt;
     if (this.barricadeCooldown > 0) this.barricadeCooldown -= dt;
     if (this.sprintTimer > 0) this.sprintTimer -= dt;

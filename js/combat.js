@@ -155,40 +155,53 @@ class CombatSystem {
   startMelee(attacker) {
     if (attacker.dead || attacker.usingMedkit) return false;
     if (attacker.meleeCooldown > 0) return false;
-    attacker.meleeCooldown = CONFIG.UNIT.MELEE_COOLDOWN;
+    attacker.meleeCooldown = attacker.classDef?.meleeCooldown || CONFIG.UNIT.MELEE_COOLDOWN;
     attacker.meleeSwing = 0.2;
     return true;
   }
 
-  /** Hit enemies in melee cone */
-  resolveMeleeHits(attacker, enemies) {
+  /** Hit enemies in melee cone (or AOE for brawler) */
+  resolveMeleeHits(attacker, enemies, isAoe) {
     if (attacker.meleeSwing < 0.15) return;
+    const range = attacker.classDef?.meleeRange || CONFIG.UNIT.MELEE_RANGE;
+    const aoe = isAoe && attacker.classDef?.meleeOnly;
     for (const target of enemies) {
       if (target.dead) continue;
       const dist = attacker.distTo(target);
-      if (dist > CONFIG.UNIT.MELEE_RANGE) continue;
+      if (dist > range) continue;
       const dx = target.x - attacker.x, dy = target.y - attacker.y;
-      const angle = Math.atan2(dy, dx);
-      let diff = angle - attacker.aimAngle;
-      while (diff > Math.PI) diff -= Math.PI * 2;
-      while (diff < -Math.PI) diff += Math.PI * 2;
-      if (Math.abs(diff) > 1.0) continue;
+      if (!aoe) {
+        // Normal cone check
+        const angle = Math.atan2(dy, dx);
+        let diff = angle - attacker.aimAngle;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        if (Math.abs(diff) > 1.0) continue;
+      }
+      const meleeDmg = (isAoe && attacker.classDef?.meleeAoeDamage) ? attacker.classDef.meleeAoeDamage : (attacker.classDef?.meleeDamage || CONFIG.UNIT.MELEE_DAMAGE);
       if (this.networkMode && target._isRemote) {
         // Don't damage remote units directly — send flat index over network
         const flatIdx = target.squadIdx * CONFIG.SQUAD.SQUAD_SIZE + target.unitIdx;
-        this.pendingMeleeHits.push({ idx: flatIdx, damage: CONFIG.UNIT.MELEE_DAMAGE });
+        this.pendingMeleeHits.push({ idx: flatIdx, damage: meleeDmg });
       } else {
-        target.takeDamage(CONFIG.UNIT.MELEE_DAMAGE);
+        target.takeDamage(meleeDmg);
       }
       const len = Math.sqrt(dx * dx + dy * dy);
       if (len > 0.1) { target.vx += (dx / len) * 80; target.vy += (dy / len) * 80; }
     }
   }
 
-  tryMelee(attacker, enemies) {
+  tryMelee(attacker, enemies, isAoe) {
     if (this.startMelee(attacker)) {
-      this.resolveMeleeHits(attacker, enemies);
-      this.effects.meleeSlash(attacker.x, attacker.y, attacker.aimAngle);
+      this.resolveMeleeHits(attacker, enemies, isAoe);
+      if (isAoe && attacker.classDef?.meleeOnly) {
+        // 360 shockwave effect
+        const range = attacker.classDef.meleeRange || CONFIG.UNIT.MELEE_RANGE;
+        this.effects.meleeSlash(attacker.x, attacker.y, attacker.aimAngle);
+        this.effects.meleeSlash(attacker.x, attacker.y, attacker.aimAngle + Math.PI);
+      } else {
+        this.effects.meleeSlash(attacker.x, attacker.y, attacker.aimAngle);
+      }
       return true;
     }
     return false;
@@ -202,7 +215,7 @@ class CombatSystem {
       const row = Math.floor(b.y / CONFIG.TILE);
       if (world.isSolid(col, row)) {
         const ruin = world.getRuin(col, row);
-        if (!ruin || !ruin.type || !RUINS[ruin.type]?.shootThrough) { b.life = 0; continue; }
+        if (!RUINS[ruin?.type]?.shootThrough) { b.life = 0; continue; }
       }
       // Circular obstacle collision (trees, rocks)
       const obstacles = world.getCircleObstacles(b.x, b.y, CONFIG.TILE);
@@ -261,35 +274,24 @@ class CombatSystem {
           Audio.explosion(dist, T * 35);
         }
 
-        // No friendly fire — only damage the opposing team
-        const targets = this.networkMode && localArmy
+        // Apply blast to all relevant units — damage enemies, knockback only for friendlies
+        const enemies = this.networkMode && localArmy
           ? (g.team === localArmy.team ? [] : localArmy.units)
           : (g.team === 'player' ? enemySquad.units : playerSquad.units);
-        for (const u of targets) {
+        const friendlies = this.networkMode && localArmy
+          ? (g.team === localArmy.team ? localArmy.units : [])
+          : (g.team === 'player' ? playerSquad.units : enemySquad.units);
+        for (const u of [...enemies, ...friendlies]) {
           if (u.dead) continue;
           const dx = u.x - g.x, dy = u.y - g.y;
           const dist = Math.sqrt(dx * dx + dy * dy);
           if (dist < blastPx) {
             const falloff = 1 - (dist / blastPx);
-            u.takeDamage(Math.floor(CONFIG.GRENADE.DAMAGE * falloff));
+            if (enemies.includes(u)) u.takeDamage(Math.floor(CONFIG.GRENADE.DAMAGE * falloff));
             if (dist > 0.1) {
               u.vx += (dx / dist) * 120 * falloff;
               u.vy += (dy / dist) * 120 * falloff;
             }
-          }
-        }
-        // Knockback only (no damage) for friendly units
-        const friendlies = this.networkMode && localArmy
-          ? (g.team === localArmy.team ? localArmy.units : [])
-          : (g.team === 'player' ? playerSquad.units : enemySquad.units);
-        for (const u of friendlies) {
-          if (u.dead) continue;
-          const dx = u.x - g.x, dy = u.y - g.y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < blastPx && dist > 0.1) {
-            const falloff = 1 - (dist / blastPx);
-            u.vx += (dx / dist) * 120 * falloff;
-            u.vy += (dy / dist) * 120 * falloff;
           }
         }
       }

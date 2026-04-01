@@ -52,12 +52,27 @@ const CONFIG = {
     },
     grenadier: {
       name: 'Grenadier', desc: 'Explosives expert. SMG + grenades. High spread.',
-      speed: 88, hp: 100,
+      speed: 88, hp: 130,
       fireRate: 0.14, damage: 9, range: 6, clipSize: 25, reserveAmmo: 125, reloadTime: 2.2,
       bulletSpeed: 300, spread: 0.13,
       medkits: 1, grenades: 3,
       ability: 'grenade',
       icon: 'G', color: '#cc7733',
+    },
+    brawler: {
+      name: 'Brawler', desc: 'Melee only. Fast, tough, 2-hit kills. E to recall to position from 2s ago.',
+      speed: 125, hp: 300,
+      fireRate: 999, damage: 0, range: 0, clipSize: 0, reserveAmmo: 0, reloadTime: 999,
+      bulletSpeed: 0, spread: 0,
+      meleeOnly: true,
+      meleeDamage: 34,
+      meleeCooldown: 0.6,
+      meleeAoeDamage: 50,
+      meleeRange: 52,
+      medkits: 2, grenades: 0,
+      ability: 'recall',
+      recallCooldown: 12,
+      icon: '✕', color: '#dd55dd',
     },
   },
 
@@ -72,7 +87,7 @@ const CONFIG = {
   SQUAD: {
     SQUADS_PER_TEAM: 5,
     SQUAD_SIZE: 6,
-    DEFAULTS: ['rifleman', 'rifleman', 'rifleman', 'machinegunner', 'medic', 'grenadier'],
+    DEFAULTS: ['rifleman', 'rifleman', 'brawler', 'machinegunner', 'medic', 'grenadier'],
   },
 
   UNIT: {

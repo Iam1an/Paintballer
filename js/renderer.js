@@ -440,13 +440,16 @@ class Renderer {
       ctx.fillStyle = '#555';    ctx.fillRect(7, -0.5, 10, 1);       // highlight
       // Magazine sticking down
       ctx.fillStyle = '#333';    ctx.fillRect(8, 2, 4, 5);
+    } else if (cls === 'brawler') {
+      // No gun — just fists forward
     }
 
     ctx.restore();
 
     // ── Hands (team colored, positioned per weapon) ──
     let fhDist = 14, rhDist = 7;
-    if (cls === 'rifleman')      { fhDist = 18; rhDist = 6; }
+    if (cls === 'brawler')       { fhDist = 12; rhDist = 10; }
+    else if (cls === 'rifleman')      { fhDist = 18; rhDist = 6; }
     else if (cls === 'machinegunner') { fhDist = 16; rhDist = 5; }
     else if (cls === 'medic')    { fhDist = 10; rhDist = 5; }
     else if (cls === 'grenadier') { fhDist = 13; rhDist = 6; }
@@ -496,6 +499,12 @@ class Renderer {
       ctx.moveTo(sx, sy - 3.5); ctx.lineTo(sx + 3, sy);
       ctx.lineTo(sx, sy + 3.5); ctx.lineTo(sx - 3, sy);
       ctx.closePath(); ctx.fill();
+    } else if (cls2 === 'brawler') {
+      // X mark
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(sx - 3.5, sy - 3.5); ctx.lineTo(sx + 3.5, sy + 3.5); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(sx + 3.5, sy - 3.5); ctx.lineTo(sx - 3.5, sy + 3.5); ctx.stroke();
     }
 
     // Outline
@@ -562,10 +571,11 @@ class Renderer {
     const { ctx } = this;
     const cam = this.camera;
     for (const b of bullets) {
+      const bx = b.x - cam.x, by = b.y - cam.y;
       ctx.fillStyle = b.team === 'player' ? '#66aaff' : '#ff5544';
-      ctx.beginPath();
-      ctx.arc(b.x - cam.x, b.y - cam.y, 2.5, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.beginPath(); ctx.arc(bx, by, 2.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.beginPath(); ctx.arc(bx - 0.5, by - 0.5, 1, 0, Math.PI * 2); ctx.fill();
     }
   }
 
